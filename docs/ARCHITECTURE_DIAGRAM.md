@@ -6,11 +6,12 @@ Rendered with Mermaid. See [ARCHITECTURE.md](ARCHITECTURE.md) for the full spec.
 
 ```mermaid
 flowchart TB
-    subgraph Client["🖥️ Client — Next.js (App Router) · 5 surfaces"]
+    subgraph Client["🖥️ Client — Next.js (App Router) · 6 surfaces"]
         TL["Timeline (home)<br/>virtualized notes"]
         CC["★ Connected-notes card<br/>1-3 connections + WHY"]
         WR["Write editor<br/>author/edit notes"]
         OR["Dynamic Organize tab<br/>auto-clusters (computed view)"]
+        NG["Local neighborhood graph<br/>force-directed, per-note (lite)"]
         DG["Weekly digest"]
         IMP["Import / onboarding UI"]
     end

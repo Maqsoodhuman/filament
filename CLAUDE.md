@@ -14,7 +14,7 @@ An AI **cross-source synthesis instrument** (NOT a notes app) for researchers/an
 
 The defining design tension, which governs nearly every decision: **the moat is the structural connection engine + ingestion breadth + accumulating per-user feedback — never the UI, never topical similarity, never the graph viz.** Effort should concentrate on the engine and the eval harness.
 
-Users both **write their own notes** (a rich editor) and **import** existing ones, and browse via a stable Timeline plus a **dynamic Organize tab** (auto-clustering). These are v1 surfaces. Crucially, **an authored note is just another ingestion source** — it enters the same `normalize → enqueue → engine` path as an import, so the editor never forks the engine. Only the graph viz is deferred.
+Users both **write their own notes** (a rich editor) and **import** existing ones, and browse via a stable Timeline plus a **dynamic Organize tab** (auto-clustering). These are v1 surfaces. Crucially, **an authored note is just another ingestion source** — it enters the same `normalize → enqueue → engine` path as an import, so the editor never forks the engine. The graph ships in v1 as a **local neighborhood view only** (force-directed, centered on the open note, read straight from the `connections` edges — no new pipeline); the **global** whole-library graph stays deferred as low-retention "demo-candy."
 
 ## The core mechanism (read this before touching engine design)
 

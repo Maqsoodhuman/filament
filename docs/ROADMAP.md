@@ -21,7 +21,8 @@ Goal: turn the proven Gate-1 loop into hardened, versioned, instrumented code. *
 
 Goal: the dump/import → organize → first-insight loop in a real user's hands.
 
-- [ ] Next.js app, **five surfaces**: **Timeline** (virtualized) + **Connected-notes card** (hero) + **Write editor** (authored notes) + **Dynamic Organize tab** + **weekly digest**
+- [ ] Next.js app, **six surfaces**: **Timeline** (virtualized) + **Connected-notes card** (hero) + **Write editor** (authored notes) + **Dynamic Organize tab** + **Local neighborhood graph** (lite) + **weekly digest**
+- [ ] Local neighborhood graph: force-directed view centered on the open note (1–2 hops, edges by facet-type), reads `connections` edges directly; click-to-recenter; capped to avoid hairball
 - [ ] Write editor (TipTap/ProseMirror); authored notes flow through the same ingestion path; **debounced re-extraction on edit** + neighborhood-scoped recompute + stale-connection tombstoning
 - [ ] Dynamic Organize tab: topical clustering job (HDBSCAN/k-means) over existing embeddings + Haiku cluster labels; computed view (notes never move); pin/rename + manual tags coexist with AI clusters
 - [ ] Importers: file-drop (Markdown/Kindle/Notion-export/Evernote) → **Readwise API** → Notion API
@@ -38,7 +39,7 @@ Goal: the dump/import → organize → first-insight loop in a real user's hands
 - [ ] Per-user personalized re-ranker trained on accumulated feedback
 - [ ] Bring-your-own-API-key strict-privacy tier (margin + researcher privacy wedge)
 - [ ] Promote `VectorIndex` → Qdrant if power-user corpora outgrow HNSW-in-Postgres
-- [ ] **Deferred-until-demanded:** graph viz
+- [ ] **Deferred-until-demanded:** the **global** force-directed graph of the whole library (the local neighborhood graph already ships in v1)
 
 ## Open risks (carried, see ARCHITECTURE.md §10)
 
