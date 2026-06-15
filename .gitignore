@@ -31,6 +31,9 @@ venv/
 .vscode/
 *.swp
 
+# Claude Code local settings (per-machine, not shared)
+.claude/settings.local.json
+
 # Build / coverage
 coverage/
 .coverage
