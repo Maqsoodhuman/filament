@@ -2,11 +2,28 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Current state: pre-code (documentation only)
+## Current state: v0 engine in progress
 
-This repository currently contains **only design documentation** — there is no application code, build, or test suite yet. Do not invent commands or reference files that don't exist. The next build step is **v0: the headless engine library** (see `docs/ROADMAP.md`). When that lands, update this file with the real build/test/lint commands.
+The `engine/` directory holds the **headless connection engine (v0)** — the moat. The web app (Next.js) is still design-only. The architecture is finalized and authoritative; before changing the design, read `docs/ARCHITECTURE.md`.
 
-The architecture is finalized and authoritative. Before proposing changes to the design, read `docs/ARCHITECTURE.md` — it is the output of a structured design process, not a draft.
+### Engine commands (run from `engine/`)
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"          # add ,postgres or ,anthropic as needed
+pytest                           # wiring tests — fake provider, no infra/network
+pytest tests/test_pipeline.py::test_connection_surfaces_between_similar_notes  # single test
+kg-engine eval                   # labeled golden set -> precision/recall/garbage
+kg-engine run /path/to/notes     # folder of .md/.txt -> surfaced connections
+```
+
+Provider is env-driven (`KG_PROVIDER=fake|ollama|anthropic`, default `fake`). The fake provider is deterministic and infra-free — it proves wiring only, **not quality**; real precision needs Ollama or the API (see `engine/.env.example`). All model calls route through `kg_engine/router.py` (the `model_router` seam).
+
+### Engine invariants (mirror the doc invariants below)
+- The pipeline stages live in `extract.py → embed (in pipeline) → index.py/retrieve.py → reason.py → verify.py`, gated in `pipeline.py`. Keep them as discrete, individually testable stages.
+- The verifier (`verify.py`) must never receive the reasoner's rationale — only the two notes + the statement. This decorrelation is load-bearing for precision.
+- Everything is keyed by `(content_hash, model_version)` (see `store.py`, `config.Settings.model_version`). Bump `prompts.PROMPT_VERSION` on any prompt change.
+- `q = min(validity, nonobviousness)`; only `q>=3 and not generic` surfaces (`models.Connection.surfaced`).
 
 ## What this project is
 

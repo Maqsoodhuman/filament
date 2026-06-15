@@ -1,0 +1,28 @@
+{
+  "notes": [
+    {"id": "cb", "title": "Central bank credibility", "domain": "economics",
+     "text": "A central bank free to re-optimize each period is tempted to surprise-inflate. Rational agents foresee this, so the economy lands at high inflation with no extra output. The remedy is to precommit to a binding rule rather than retain discretion."},
+    {"id": "ru", "title": "Rule vs act utilitarianism", "domain": "philosophy",
+     "text": "An agent free to re-evaluate each act can be pushed toward monstrous one-offs, like punishing an innocent to placate a mob. Committing to a standing rule protects the trust that case-by-case optimization would erode."},
+    {"id": "qs", "title": "Bacterial quorum sensing", "domain": "biology",
+     "text": "Cells secrete signaling molecules; once their concentration crosses a density threshold, the whole colony switches behavior simultaneously, coordinating as if it were one organism."},
+    {"id": "br", "title": "Bank runs", "domain": "economics",
+     "text": "Each depositor's incentive to withdraw depends on how many others are withdrawing. Past a threshold of withdrawals, confidence collapses and the whole system flips into a run all at once."},
+    {"id": "id", "title": "Induced traffic demand", "domain": "urban planning",
+     "text": "Adding road lanes lowers the perceived cost of a trip, so latent demand floods back until congestion returns to its prior level. Expanding supply does not relieve the binding constraint."},
+    {"id": "nr", "title": "Natural rate of unemployment", "domain": "economics",
+     "text": "Pushing unemployment below its natural rate lowers the perceived cost of inflation, so wage- and price-setters revise expectations upward until unemployment snaps back to the natural rate."},
+    {"id": "ec", "title": "Escalation of commitment", "domain": "management",
+     "text": "Having sunk resources into a failing project, managers reframe sunk costs as recoverable and pour in more to avoid conceding the original decision was wrong."},
+    {"id": "veil", "title": "Veil of ignorance", "domain": "philosophy",
+     "text": "Strip a chooser of knowledge of their own position in society and, under uncertainty, they design institutions that protect the worst-off floor."}
+  ],
+  "genuine_pairs": [
+    ["cb", "ru"],
+    ["qs", "br"],
+    ["id", "nr"]
+  ],
+  "garbage_pairs": [
+    ["veil", "qs"]
+  ]
+}

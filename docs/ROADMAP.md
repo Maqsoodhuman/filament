@@ -6,14 +6,18 @@ Sequencing follows one principle: **prove the moat headless before building any 
 
 Goal: turn the proven Gate-1 loop into hardened, versioned, instrumented code. **No UI.**
 
-- [ ] `engine/` Python library: `extract_facets → embed → retrieve_candidates → reason → verify → q-gate`
-- [ ] Postgres + pgvector schema (notes, note_facets, connections, connection_feedback, note_clusters, prompt_versions, eval_runs)
-- [ ] All stages idempotent, keyed by `(content_hash, model_version)`
-- [ ] `model_router` module (Haiku extraction / Sonnet reason+verify / Opus judge); effort + prompt version as config
-- [ ] Type-partitioned HNSW indexes (5 facet types)
-- [ ] Generic-skeleton suppression (IDF + centroid penalty + frequency quarantine)
-- [ ] Golden-set offline eval runner wired into CI as a **deploy gate**
-- [ ] **Exit criterion:** ≥75% precision reproducibly on *real heterogeneous* libraries (not the curated Gate-1 corpus)
+- [x] `engine/` Python library: `extract_facets → embed → retrieve_candidates → reason → verify → q-gate` (`engine/src/kg_engine/`)
+- [x] `model_router` module — fake / Ollama (local) / Anthropic, hybrid supported (`router.py`); prompt version as config (`prompts.PROMPT_VERSION`)
+- [x] All stages idempotent, keyed by `(content_hash, model_version)` (`store.py`, `config.model_version`)
+- [x] Generic-skeleton suppression via hub-facet quarantine (`retrieve.py`)
+- [x] Vector index seam (`VectorIndex`) — in-memory numpy impl, partitioned by facet type (`index.py`)
+- [x] Golden-set eval harness + labeled corpus (`eval.py`, `data/golden/notes.json`)
+- [x] Postgres + pgvector schema (`db/schema.sql`: notes, note_facets, connections, connection_feedback, note_clusters, prompt_versions, eval_runs)
+- [x] Wiring tests, infra-free via fake provider (`tests/`, 5 passing)
+- [ ] pgvector-backed store implementation (currently in-memory only)
+- [ ] Type-partitioned HNSW as real table partitions (logically partitioned today)
+- [ ] Wire the eval runner into CI as a **deploy gate**
+- [ ] **Exit criterion:** ≥75% precision reproducibly on *real heterogeneous* libraries via Ollama/API (not the fake provider, not the curated Gate-1 corpus)
 
 **Recommended pre-v0 de-risk:** run the *floor experiment* (messy realistic corpus) — see [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md).
 
