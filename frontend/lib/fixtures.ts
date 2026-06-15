@@ -2,6 +2,8 @@ import type { components } from "@/lib/api-types";
 
 type NoteOut = components["schemas"]["NoteOut"];
 type NoteDetail = components["schemas"]["NoteDetail"];
+type ClusterOut = components["schemas"]["ClusterOut"];
+type ConnectionOut = components["schemas"]["ConnectionOut"];
 
 // Phase 2 fixture — typed against the generated contract so the shape can
 // never drift from the engine's schema. Hand-writing API types is forbidden
@@ -149,6 +151,47 @@ export const noteDetailFixtures: Record<string, NoteDetail> = {
   n_002: qsDetail,
   n_003: ruDetail,
 };
+
+// --- Organize fixtures (clusters/sections) --------------------------------
+// Used by app/organize/page.tsx when the engine /clusters endpoint is offline.
+// Sections are connected-components over the surfaced-connection graph (the
+// engine's DEV baseline), so they reference the same seed note ids.
+export const clusterFixtures: ClusterOut[] = [
+  {
+    id: "cl_commitment",
+    notebook: "Research library",
+    label: "Threshold commitment",
+    note_ids: ["cb", "qs", "ru"],
+    note_count: 3,
+    is_manual: false,
+  },
+  {
+    id: "cl_fragility",
+    notebook: "Research library",
+    label: "Fragility & disorder",
+    note_ids: ["n_004"],
+    note_count: 1,
+    is_manual: false,
+  },
+];
+
+// All notes the Organize/Graph fixtures may reference, indexable by id. These
+// mirror both the engine seed ids (cb/qs/ru) and the timeline ids (n_00x).
+export const allNotesFixture: NoteOut[] = [
+  cbDetail.note,
+  qsDetail.note,
+  ruDetail.note,
+  timelineNotes[3], // Antifragility under stress (n_004)
+  ...timelineNotes,
+];
+
+// --- Graph fixtures (connections for a note) -------------------------------
+// Used by app/graph/page.tsx when the engine /connections endpoint is offline.
+// Returns the edges incident to the given note id, drawn from the note-detail
+// fixtures (which already carry typed ConnectionOut rows).
+export function fixtureConnectionsForNote(id: string): ConnectionOut[] {
+  return noteDetailFixtures[id]?.connections ?? [];
+}
 
 // Fallback for an unknown id: a minimal honest detail with no connections.
 export function fallbackNoteDetail(id: string): NoteDetail {
