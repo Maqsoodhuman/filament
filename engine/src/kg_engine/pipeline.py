@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from .config import Settings
 from .extract import extract_facets
@@ -19,14 +20,46 @@ from .store import InMemoryStore
 from .verify import verify_pair
 
 
+def _normalize_pg_url(url: str) -> str:
+    """psycopg wants a libpq URL; the alembic/migration tooling uses a SQLAlchemy URL with the
+    +psycopg driver suffix. Strip the suffix so the same DATABASE_URL works for both."""
+    return url.replace("postgresql+psycopg://", "postgresql://", 1)
+
+
+def make_backend(settings: Settings) -> tuple[Any, Any]:
+    """Build (store, index) for the configured backend. Default 'memory' keeps the infra-free
+    path unchanged; 'postgres' returns the pgvector-backed implementations. The Engine treats
+    both identically — this is the one seam the architecture keeps (ARCHITECTURE.md §4)."""
+    if settings.store_backend == "postgres":
+        if not settings.database_url:
+            raise ValueError("store_backend=postgres requires DATABASE_URL")
+        from .pg_backend import PgStore, PgVectorIndex  # lazy: optional [postgres] extra
+
+        conninfo = _normalize_pg_url(settings.database_url)
+        mv = settings.model_version()
+        return (
+            PgStore(conninfo),
+            PgVectorIndex(conninfo, ef_search=settings.ef_search, model_version=mv),
+        )
+    if settings.store_backend == "memory":
+        return InMemoryStore(), InMemoryVectorIndex()
+    raise ValueError(f"unknown store_backend: {settings.store_backend}")
+
+
 @dataclass
 class Engine:
     settings: Settings = field(default_factory=Settings)
+    store: Any = None
+    index: Any = None
 
     def __post_init__(self) -> None:
         self.router = ModelRouter(self.settings)
-        self.store = InMemoryStore()
-        self.index = InMemoryVectorIndex()
+        if self.store is None or self.index is None:
+            store, index = make_backend(self.settings)
+            if self.store is None:
+                self.store = store
+            if self.index is None:
+                self.index = index
         self._notes: dict[str, Note] = {}
         self._facets: dict[str, list[Facet]] = {}
         self._topical: dict[str, list[float]] = {}

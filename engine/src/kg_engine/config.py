@@ -29,6 +29,14 @@ class Settings:
     # provider: "fake" (no infra, deterministic), "ollama" (local), "anthropic" (API)
     provider: str = _env("KG_PROVIDER", "fake")
 
+    # store/index backend: "memory" (default, no infra) | "postgres" (pgvector). When "postgres",
+    # DATABASE_URL must point at a migrated DB (see migrations 0001+0002). The backend swap does
+    # not change pipeline behavior — it is the same store/index interface.
+    store_backend: str = _env("KG_STORE_BACKEND", "memory")
+    database_url: str = _env("DATABASE_URL", "")
+    # HNSW recall knob, honored per-query via SET LOCAL hnsw.ef_search (postgres backend only).
+    ef_search: int = int(_env("KG_EF_SEARCH", "100"))
+
     # local (Ollama) model assignments per pipeline role
     ollama_host: str = _env("OLLAMA_HOST", "http://localhost:11434")
     extract_model: str = _env("KG_EXTRACT_MODEL", "qwen2.5:7b")

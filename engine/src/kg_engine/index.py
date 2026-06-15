@@ -27,6 +27,10 @@ class VectorIndex:
         """Return up to k (note_id, facet_idx, cosine_sim) neighbors within the same facet type."""
         raise NotImplementedError
 
+    def neighbors_within(self, facet_type: str, vec: list[float], radius: float) -> int:
+        """Count entries whose cosine sim exceeds `radius` — used for hub/genericness detection."""
+        raise NotImplementedError
+
 
 class InMemoryVectorIndex(VectorIndex):
     def __init__(self) -> None:
