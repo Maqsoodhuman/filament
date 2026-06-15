@@ -24,7 +24,7 @@ Goal: the dump/import → organize → first-insight loop in a real user's hands
 - [ ] Next.js app, **six surfaces**: **Timeline** (virtualized) + **Connected-notes card** (hero) + **Write editor** (authored notes) + **Dynamic Organize tab** + **Local neighborhood graph** (lite) + **weekly digest**
 - [ ] Local neighborhood graph: force-directed view centered on the open note (1–2 hops, edges by facet-type), reads `connections` edges directly; click-to-recenter; capped to avoid hairball
 - [ ] Write editor (TipTap/ProseMirror); authored notes flow through the same ingestion path; **debounced re-extraction on edit** + neighborhood-scoped recompute + stale-connection tombstoning
-- [ ] Dynamic Organize tab: topical clustering job (HDBSCAN/k-means) over existing embeddings + Haiku cluster labels; computed view (notes never move); pin/rename + manual tags coexist with AI clusters
+- [ ] Dynamic Organize tab: **OneNote-style Notebook → Section → Page** layout; sections = AI clusters (HDBSCAN/k-means over existing embeddings + Haiku labels); **multi-section membership** (a note in several sections); computed view (notes never move); pin/rename AI sections + add manual notebooks/sections that coexist
 - [ ] Importers: file-drop (Markdown/Kindle/Notion-export/Evernote) → **Readwise API** → Notion API
 - [ ] Onboarding: synchronous **fast-lane** (first insight in ~2–3 min) + **Batches API** bulk backfill
 - [ ] Two-axis feedback (`wrong`/`obvious`/`surface match`) writing to `connection_feedback`
