@@ -34,8 +34,9 @@ See `docs/DESIGN_DECISIONS.md` Part B for the experiment that justifies #4 and #
 - **Async**: Dramatiq on Redis. All engine work is async, off every HTTP write path, idempotent, keyed by `(content_hash, model_version)`.
 - **Data**: single managed Postgres 16 + pgvector (HNSW) + pg_trgm. Connections are strictly **intra-user** (shard by `user_id`) — this is how the N² problem is bounded.
 - **Models**: Anthropic — Haiku 4.5 (extraction) · Sonnet 4.6 (reasoning + verifier) · **Opus 4.8 (eval judge ONLY, never per-pair)**. Embeddings: Voyage `voyage-3-large`. Routed through one `model_router` module; effort/prompt-version is config, not call sites.
-- **Frontend** (v1): Next.js (App Router) + TypeScript + Tailwind/shadcn + TanStack Query/Virtual. Thin BFF via Next.js Route Handlers — **no LLM/embedding work on the API path**.
+- **Frontend** (v1): Next.js (App Router) + TypeScript + Tailwind/shadcn + TanStack Query/Virtual. Thin BFF via Next.js Route Handlers — **no LLM/embedding work on the API path**. Note editor = **BlockNote** (TipTap/ProseMirror) with tables/images/callouts/code; images → S3/R2.
 - **Hosting**: Fly.io (api/workers/Postgres) + Vercel (frontend).
+- **Model runtime**: all calls go through `model_router`, so **local LLMs (Ollama) are a config swap** — use them for dev / the floor experiment, validate via the eval harness before trusting local for the reasoning+verifier (moat) stages; hybrid (local extract/embed + API reason/verify) is the expected sweet spot. The core loop is a **deterministic pipeline, not autonomous agents** — optionally orchestrated on LangGraph; reserve true agents for a v2 "deep connection explorer." See `ARCHITECTURE.md` §3b.
 
 ## Hard invariants (do not violate without revisiting the design docs)
 
