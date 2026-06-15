@@ -1,0 +1,25 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Design tokens — docs/DESIGN_SYSTEM.md §2. Light is default. */
+:root {
+  --surface: #ffffff;
+  --surface-sunken: #fafaf9;
+  --surface-hover: #f4f4f5;
+  --border-hairline: #e7e5e4;
+  --text-primary: #1c1917;
+  --text-secondary: #78716c;
+  --text-tertiary: #a8a29e;
+  /* Reserved blue — AI / connection only. */
+  --accent-ai: #2563eb;
+  --accent-ai-tint: #eff4ff;
+  --accent-ai-border: #bfd4fe;
+}
+
+html,
+body {
+  background: var(--surface-sunken);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+}
