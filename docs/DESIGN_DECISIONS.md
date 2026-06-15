@@ -37,6 +37,14 @@ The debate recommended deferring the rich editor and the Organize tab (commodity
 - **Cost:** it is cheap to add — an authored note is just another ingestion source (same engine path), and the Organize tab reuses topical embeddings the engine already computes. See `ARCHITECTURE.md` §6.3, §6.4, §3a.
 - **The risk it reintroduces:** authoring depends on user discipline — the "input problem" the debate flagged. Import remains the cold-start killer; authored notes are additive, not the primary fuel. The dynamic Organize tab must stay a *computed view* (notes never move) so it never compromises findability.
 
+### Product-owner decision: open-core editions + on-demand triggering
+
+Two decisions taken by the product owner, recorded here:
+
+1. **Open-core, two editions** — *Community* (open source, self-hosted, bring-your-own Ollama models, free) and *Premium* (hosted, managed Claude models, paid). This is consistent with the moat analysis: the algorithm is cloneable, so open-sourcing it converts a non-moat into **distribution + privacy trust** (valuable for the researcher persona), while revenue comes from managed frontier quality, importers, the feedback flywheel, and convenience. **Risk to watch:** Premium must justify itself purely on convenience + frontier quality + managed importers + proactive resurfacing, since anyone can self-host the core — the Premium value prop must stay crisp.
+
+2. **On-demand triggering, not always-on** — the pipeline runs when the user hits "Find connections" / "Scan library", not automatically on every note. This is the right cost/UX call (a 9B local model can't grind on every keystroke). **Tradeoff managed:** pure on-demand removes proactive resurfacing, which is the main defense against the retention risk below. Resolution: on-demand is the default everywhere; **background auto-scan + the weekly digest are Premium-only**, making proactivity a paid retention lever rather than a cost burden on local installs. See `ARCHITECTURE.md` §1a.
+
 ### The single biggest risk
 
 **Post-import recurrence of genuine insight.** The unit of risk is not "is the day-1 connection rate >30% on a static imported corpus" — it is **"does a NEW genuinely-good connection fire multiple times per active work-week after the import is mined out?"** If the whoa-rate decays once the initial corpus is exhausted, the habit loop never forms and the product dies at the pricing page.

@@ -20,6 +20,26 @@
 
 A **Next.js web app** — where users both **write their own notes** and **import** existing ones, and browse them via a stable Timeline plus a **dynamic Organize tab** — over a **single managed Postgres+pgvector system of record**, with the bulk of the engineering budget spent on a **cleanly-bounded, model-versioned connection engine** (`engine/` Python library) running **async off every write path** on a durable queue. Authored and imported notes share one ingestion path, so the editor adds a surface without forking the engine. The engine is the proven Gate-1 loop: cached Haiku facet extraction → abstraction-space ANN (type-partitioned) → Sonnet reasoning → an **independent Sonnet verifier** → hard `q>=3` gate. Opus is rationed to the eval-judge role, never the per-pair hot path. We start with **two** deployables (api + workers), not three, and draw exactly one real seam — `VectorIndex` — because that is the only joint scale actually forces. Defensibility: not the cloneable algorithm but **ingestion breadth + accumulating per-user feedback data + workflow lock-in**, so connectors and the feedback spine are first-class from day one.
 
+## 1a. Product editions & when the engine runs
+
+The product ships as **open-core, two editions** — which is consistent with the moat (the algorithm is cloneable; defensibility is ingestion breadth + feedback data + managed quality, not the code). Open-sourcing the engine turns the cloneable part into **distribution + privacy trust** for the researcher persona.
+
+| | **Community** (open source, self-host) | **Premium** (hosted) |
+|---|---|---|
+| Models | Your own **Ollama** models (BYO) | Managed **Claude** (Haiku/Sonnet), eval-tuned |
+| Connection finding | **On-demand only** (button) | **On-demand + optional background scan + weekly digest** |
+| Setup | `git pull`, run locally | Sign up, zero setup |
+| Data | 100% local / private | Hosted (or bring-your-own-key privacy tier) |
+| Importers | File-drop / manual | Managed connectors (Readwise, Notion, …) |
+| Quality | Depends on your models | Frontier, prompt-tuned, eval-gated |
+| Price | Free | $/seat |
+
+**Triggering — explicit, not always-on.** The connection pipeline does **not** run automatically on every note (that would grind local hardware and burn cost). It runs on an explicit user action:
+- **"Find connections"** — scoped to the open note (extract its facets if needed → match against the index → reason/verify → surface).
+- **"Scan library"** — incremental over all new/changed notes since the last scan.
+
+Both still execute **async behind the trigger** (queued, off the HTTP path). **Background auto-scan + the proactive weekly digest are Premium-only** — this is the deliberate retention lever (the debate's #1 risk) that justifies the hosted tier, while keeping local self-hosting cheap and battery-friendly. The engine API is identical in both editions; only the *trigger* (user button vs. scheduler) and the *model_router* targets (Ollama vs. Claude) differ.
+
 ## 2. The stack
 
 | Layer | Technology | Justification |
@@ -36,7 +56,7 @@ A **Next.js web app** — where users both **write their own notes** and **impor
 
 ## 3. The connection engine pipeline
 
-All stages async, idempotent, keyed by `(content_hash, model_version)`; no LLM/embedding call ever touches an HTTP write path.
+All stages async, idempotent, keyed by `(content_hash, model_version)`; no LLM/embedding call ever touches an HTTP write path. The pipeline is invoked on an **explicit trigger** ("Find connections" / "Scan library" — see §1a), not automatically on every note; the work still runs async behind that trigger. (Premium may also fire the same pipeline from a background scheduler.)
 
 1. **Facet extraction (per note, once, cached forever).** One **Haiku 4.5** call with a strict JSON schema → 0–5 typed facets `{causal_mechanism | tension_tradeoff | selection_incentive | temporal_dynamic | abstract_pattern}`, each a **domain-stripped abstraction statement** + salience 0..1. Notes yielding zero real facets are excluded from matching (first garbage filter). System/schema block is **prompt-cached** (~0.1x reads). **Tiered escalation:** escalate to Sonnet only when Haiku returns low-confidence/empty facets (<10% of notes).
 2. **Abstraction embedding.** Embed each facet's abstraction text (not raw note) with **Voyage voyage-3-large** → `note_facets.facet_embedding`, HNSW index **partitioned by facet_type**. Embedding the abstraction is what lands topically-distant notes near each other.
@@ -90,11 +110,11 @@ Every path terminates in **one `normalize → enqueue` entrypoint**, so adding a
 
 1. **Timeline (home):** notes in creation-date order, virtualized, instant. The stable home — notes never physically move; organization is computed views layered on top.
 2. **★ Connected-notes card (the hero, in-context):** opening any note shows its 1–3 highest-q connections inline — partner-note snippet + one-sentence WHY + facet-type badge. Two one-click controls: **Useful** (upvote) and **dismiss/downvote** with optional reason — **`wrong` → validity label, `obvious` → non-obviousness label, `surface match` → third signal** (two-axis capture; turns one click into independent tuning signal for both verifier axes). Optimistic update; every action writes `connection_feedback`.
-3. **Write editor (normal notes):** a full rich editor — **BlockNote** (built on TipTap/ProseMirror) for a Notion-grade block experience: `/` command menu, drag-to-reorder, **tables, image blocks, callouts, code blocks, checklists, embeds**. Images upload to S3/R2 (the note stores a reference). An authored note is **just another ingestion source** — it flows into the *same* `normalize → enqueue → engine` pipeline as an import (no separate engine path). The only new behavior: an edit changes the note's `content_hash`, which **debounced-triggers re-extraction** of that note's facets and a neighborhood-scoped re-match (see §3a). The note's connected-notes card lights up as the engine finishes, so writing a note surfaces what it connects to. *(Engine note: facet extraction reads the note's text content; non-prose blocks — table cells contribute as text, images become connectable later via OCR/caption in v2.)*
+3. **Write editor (normal notes):** a full rich editor — **BlockNote** (built on TipTap/ProseMirror) for a Notion-grade block experience: `/` command menu, drag-to-reorder, **tables, image blocks, callouts, code blocks, checklists, embeds**. Images upload to S3/R2 (the note stores a reference). An authored note is **just another ingestion source** — it flows into the *same* `normalize → enqueue → engine` pipeline as an import (no separate engine path). The only new behavior: an edit changes the note's `content_hash`, which **debounced-triggers re-extraction** of that note's facets and a neighborhood-scoped re-match (see §3a). The note's connected-notes card populates after the user hits **"Find connections"** (Community) or automatically on the next background scan (Premium) — see §1a. *(Engine note: facet extraction reads the note's text content; non-prose blocks — table cells contribute as text, images become connectable later via OCR/caption in v2.)*
 4. **Dynamic Organize tab (dynamic notes):** a familiar **OneNote-style three-pane layout — Notebook → Section → Page** — but auto-filled by the engine. Notebooks are top-level containers; **sections are the AI clusters** (named by a cheap model); pages are the notes. It is a **computed view, never a move** — the Timeline stays the stable home; sections are a lens on top. Two deliberate upgrades over OneNote:
    - **Multi-section membership:** a note can appear in *several* sections at once (e.g. "also in: Signaling · Emergence"), because membership is a computed view, not a physical folder. OneNote can't do this; we can.
    - **Zero manual filing:** the AI populates sections automatically. Users can still **pin/rename** AI sections and **add their own manual notebooks/sections**, which coexist with the AI ones (never forced to trust the AI to find a note).
-   It reuses the **topical embeddings the engine already computes** (the same vectors used in §3 to *reject* same-topic pairs), so it adds almost no new model cost. Re-clusters after import and on the nightly job.
+   It reuses the **topical embeddings the engine already computes** (the same vectors used in §3 to *reject* same-topic pairs), so it adds almost no new model cost. Re-clusters on demand (Community) or after import / on a background job (Premium).
 5. **Local neighborhood graph (lite graph):** when viewing a note, a small force-directed graph centered on it — the note as the hub, its q≥3 connected notes as surrounding nodes (1–2 hops), edges colored/labeled by facet-type. It is a *visual expansion of the connected-notes card*, not a global map: capped to the local neighborhood so it never degrades into an unreadable hairball, and it reads directly from the `connections` edges the engine already produces (no new pipeline, no new model cost). Click a node to recenter. The **global force-directed graph of the whole library stays deferred** (commodity, low retention).
 6. **Connections digest:** weekly "connections found in your library this week" email/feed — the re-engagement loop.
 

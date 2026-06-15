@@ -17,6 +17,17 @@ Existing note apps (Notion, Obsidian, Roam, Mem) are either passive databases or
 - **Not the moat:** the graph visualization, topical similarity (both commodity).
 - **Strategy:** import-first to kill cold-start, but you can also **write your own notes** and browse them via a **dynamic auto-Organize tab** — both feed the same engine. The hero surface is the in-context "connected notes" card (with a one-line *why*), with a **local neighborhood graph** around each note. Only the *global* graph of the whole library is deferred.
 
+## Editions (open-core)
+
+| | **Community** (open source, self-host) | **Premium** (hosted) |
+|---|---|---|
+| Models | Your own Ollama models | Managed Claude, eval-tuned |
+| Connection finding | On-demand button | On-demand + background + weekly digest |
+| Data | 100% local / private | Hosted (or bring-your-own-key) |
+| Price | Free | $/seat |
+
+**The engine runs on an explicit trigger** ("Find connections" / "Scan library"), never automatically on every note — cheap on local hardware, and full user control. Background auto-scan + proactive digests are the Premium retention lever.
+
 ## Validation status
 
 | Gate | Question | Result |

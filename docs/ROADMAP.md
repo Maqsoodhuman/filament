@@ -2,6 +2,8 @@
 
 Sequencing follows one principle: **prove the moat headless before building any product around it.**
 
+**Editions (open-core):** *Community* (open source, self-host, BYO Ollama, on-demand only) and *Premium* (hosted, managed Claude, on-demand + background scan + weekly digest). The engine runs on an explicit trigger, never auto-on-every-note. See `docs/ARCHITECTURE.md` §1a.
+
 ## v0 — Spike-to-product (the moat, headless)
 
 Goal: turn the proven Gate-1 loop into hardened, versioned, instrumented code. **No UI.**
