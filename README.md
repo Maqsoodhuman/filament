@@ -45,6 +45,7 @@ See [docs/DESIGN_DECISIONS.md](docs/DESIGN_DECISIONS.md) for the full reasoning 
 | [docs/ARCHITECTURE_DIAGRAM.md](docs/ARCHITECTURE_DIAGRAM.md) | Visual system, pipeline, and ingestion diagrams (Mermaid). |
 | [docs/DESIGN_DECISIONS.md](docs/DESIGN_DECISIONS.md) | Why this product / why this shape — the strategy debate consensus + the Gate-1 validation experiment. |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Phased build plan (v0 → v1 → v2) and open risks. |
+| [docs/DESIGN_SYSTEM.md](docs/DESIGN_SYSTEM.md) | Build-ready design system — tokens, components, per-surface guidance (from a 5-reference UI study). |
 
 ## Stack at a glance
 
