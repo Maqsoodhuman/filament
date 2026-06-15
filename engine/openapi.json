@@ -289,10 +289,74 @@
           }
         }
       }
+    },
+    "/clusters": {
+      "get": {
+        "summary": "List Clusters",
+        "description": "Organize tab: connected components of the surfaced-connection graph = thematic sections.\n\nDEV baseline (connected components). PROD will cluster topical embeddings (HDBSCAN) with\nmulti-section membership; this gives a real, non-empty Organize backing today.",
+        "operationId": "list_clusters_clusters_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ClusterOut"
+                  },
+                  "type": "array",
+                  "title": "Response List Clusters Clusters Get"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "ClusterOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "notebook": {
+            "type": "string",
+            "title": "Notebook",
+            "default": "Research library"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "note_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Note Ids"
+          },
+          "note_count": {
+            "type": "integer",
+            "title": "Note Count"
+          },
+          "is_manual": {
+            "type": "boolean",
+            "title": "Is Manual",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "note_ids",
+          "note_count"
+        ],
+        "title": "ClusterOut"
+      },
       "ConnectionOut": {
         "properties": {
           "id": {

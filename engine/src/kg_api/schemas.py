@@ -64,6 +64,17 @@ class ConnectionOut(BaseModel):
     q: int = Field(ge=1, le=5)
 
 
+# ---- Clusters (Organize tab: OneNote-style sections) ----
+
+class ClusterOut(BaseModel):
+    id: str
+    notebook: str = "Research library"
+    label: str
+    note_ids: list[str]
+    note_count: int
+    is_manual: bool = False
+
+
 # ---- Jobs (on-demand trigger results) ----
 
 class JobOut(BaseModel):

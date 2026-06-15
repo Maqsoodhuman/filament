@@ -124,10 +124,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/clusters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Clusters
+         * @description Organize tab: connected components of the surfaced-connection graph = thematic sections.
+         *
+         *     DEV baseline (connected components). PROD will cluster topical embeddings (HDBSCAN) with
+         *     multi-section membership; this gives a real, non-empty Organize backing today.
+         */
+        get: operations["list_clusters_clusters_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** ClusterOut */
+        ClusterOut: {
+            /** Id */
+            id: string;
+            /**
+             * Notebook
+             * @default Research library
+             */
+            notebook: string;
+            /** Label */
+            label: string;
+            /** Note Ids */
+            note_ids: string[];
+            /** Note Count */
+            note_count: number;
+            /**
+             * Is Manual
+             * @default false
+             */
+            is_manual: boolean;
+        };
         /** ConnectionOut */
         ConnectionOut: {
             /** Id */
@@ -470,6 +514,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_clusters_clusters_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClusterOut"][];
                 };
             };
         };

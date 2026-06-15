@@ -18,7 +18,11 @@ from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException
 
+import re
+from collections import Counter
+
 from kg_api.schemas import (
+    ClusterOut,
     ConnectionOut,
     JobOut,
     NoteCreate,
@@ -172,6 +176,71 @@ def get_job(job_id: str) -> JobOut:
     if job is None:
         raise HTTPException(404, "job not found")
     return job
+
+
+_STOP = {"with", "from", "that", "this", "into", "their", "your", "about", "which", "where",
+         "the", "and", "for", "are", "was", "its", "out", "not", "you", "they", "once"}
+
+
+def _label(notes: list[Note]) -> str:
+    """Cheap section label = most frequent salient word across member titles (PROD: a Haiku call)."""
+    words = Counter()
+    for n in notes:
+        for w in re.findall(r"[a-zA-Z]{5,}", (n.title + " " + n.text).lower()):
+            if w not in _STOP:
+                words[w] += 1
+    top = [w for w, _ in words.most_common(2)]
+    return " · ".join(w.capitalize() for w in top) if top else "Notes"
+
+
+def _kmeans(ids: list[str], vecs: "list", k: int, iters: int = 12) -> dict[int, list[str]]:
+    import numpy as np
+
+    x = np.asarray(vecs, dtype=np.float32)
+    x = x / (np.linalg.norm(x, axis=1, keepdims=True) + 1e-9)
+    # deterministic seeding: farthest-point init from the first note
+    centers = [0]
+    while len(centers) < k:
+        d = 1 - (x @ x[centers].T).max(axis=1)
+        centers.append(int(np.argmax(d)))
+    c = x[centers].copy()
+    assign = np.zeros(len(x), dtype=int)
+    for _ in range(iters):
+        assign = np.argmax(x @ c.T, axis=1)
+        for j in range(k):
+            m = x[assign == j]
+            if len(m):
+                c[j] = m.mean(axis=0)
+                c[j] /= np.linalg.norm(c[j]) + 1e-9
+    out: dict[int, list[str]] = {}
+    for nid, a in zip(ids, assign):
+        out.setdefault(int(a), []).append(nid)
+    return out
+
+
+@app.get("/clusters", response_model=list[ClusterOut])
+def list_clusters() -> list[ClusterOut]:
+    """Organize tab: cluster topical embeddings into themed sections (k-means over the vectors
+    the engine already computes). DEV baseline; PROD swaps in HDBSCAN + Haiku labels + multi-section
+    membership. Robust to connection density (unlike a connection-graph component approach)."""
+    eng = _eng()
+    ids = [nid for nid in _notes if nid in eng._topical]
+    if not ids:
+        return []
+    k = max(1, min(4, len(ids)))
+    groups = _kmeans(ids, [eng._topical[nid] for nid in ids], k)
+    clusters = []
+    for i, (_g, gids) in enumerate(sorted(groups.items(), key=lambda kv: -len(kv[1]))):
+        members = [_notes[nid] for nid in gids]
+        clusters.append(
+            ClusterOut(
+                id=f"cl_{i}",
+                label=_label(members) if len(members) > 1 else members[0].title,
+                note_ids=gids,
+                note_count=len(gids),
+            )
+        )
+    return clusters
 
 
 def _conn_out(c) -> ConnectionOut:
