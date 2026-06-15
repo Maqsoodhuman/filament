@@ -1,3 +1,4 @@
+import Link from "next/link";
 import TopNav from "@/components/TopNav";
 import NoteCard from "@/components/NoteCard";
 import { timelineNotes } from "@/lib/fixtures";
@@ -35,11 +36,25 @@ export default async function TimelinePage() {
         <p className="mt-1 text-meta text-text-secondary">
           Your library, newest first.
         </p>
-        <div className="mt-8 flex flex-col gap-3">
-          {notes.map((note) => (
-            <NoteCard key={note.id} note={note} />
-          ))}
-        </div>
+        {notes.length === 0 ? (
+          <div className="mt-12 flex flex-col items-center text-center">
+            <p className="text-body text-text-secondary">
+              Your library is empty.
+            </p>
+            <Link
+              href="/onboarding"
+              className="mt-4 inline-flex items-center rounded-sm bg-text-primary px-4 py-[10px] text-ui text-surface transition-opacity duration-[120ms] ease-confirm hover:opacity-90"
+            >
+              Import your library
+            </Link>
+          </div>
+        ) : (
+          <div className="mt-8 flex flex-col gap-3">
+            {notes.map((note) => (
+              <NoteCard key={note.id} note={note} />
+            ))}
+          </div>
+        )}
       </main>
     </div>
   );
