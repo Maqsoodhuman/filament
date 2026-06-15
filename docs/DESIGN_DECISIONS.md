@@ -30,6 +30,13 @@ The product **as originally framed** (a horizontal three-tab PKM app: Write / Or
 4. **Is the category a graveyard?** False as of 2026 — Mem 2.0 is live and still selling the auto-organize thesis. The honest read is "unproven and contested," and the incumbent threat (Readwise's Ghostreader moving up toward synthesis) is real.
 5. **Defensibility vs incumbents/labs.** The algorithm is indefensible; cross-app connectors (Apple Notes SQLite, OneNote MS Graph, Kindle) + a tuned eval harness + niche trust buy a ~1-year window, not permanent safety.
 
+### Product-owner override: authored notes + Organize tab are v1, not deferred
+
+The debate recommended deferring the rich editor and the Organize tab (commodity, ship-speed). The product owner overrode this: **writing your own notes and a dynamic auto-Organize view are core to the original vision and ship in v1.** This is a deliberate, eyes-open call. The tradeoff to keep in view:
+
+- **Cost:** it is cheap to add — an authored note is just another ingestion source (same engine path), and the Organize tab reuses topical embeddings the engine already computes. See `ARCHITECTURE.md` §6.3, §6.4, §3a.
+- **The risk it reintroduces:** authoring depends on user discipline — the "input problem" the debate flagged. Import remains the cold-start killer; authored notes are additive, not the primary fuel. The dynamic Organize tab must stay a *computed view* (notes never move) so it never compromises findability.
+
 ### The single biggest risk
 
 **Post-import recurrence of genuine insight.** The unit of risk is not "is the day-1 connection rate >30% on a static imported corpus" — it is **"does a NEW genuinely-good connection fire multiple times per active work-week after the import is mined out?"** If the whoa-rate decays once the initial corpus is exhausted, the habit loop never forms and the product dies at the pricing page.

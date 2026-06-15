@@ -7,7 +7,7 @@ Sequencing follows one principle: **prove the moat headless before building any 
 Goal: turn the proven Gate-1 loop into hardened, versioned, instrumented code. **No UI.**
 
 - [ ] `engine/` Python library: `extract_facets → embed → retrieve_candidates → reason → verify → q-gate`
-- [ ] Postgres + pgvector schema (notes, note_facets, connections, connection_feedback, prompt_versions, eval_runs)
+- [ ] Postgres + pgvector schema (notes, note_facets, connections, connection_feedback, note_clusters, prompt_versions, eval_runs)
 - [ ] All stages idempotent, keyed by `(content_hash, model_version)`
 - [ ] `model_router` module (Haiku extraction / Sonnet reason+verify / Opus judge); effort + prompt version as config
 - [ ] Type-partitioned HNSW indexes (5 facet types)
@@ -19,9 +19,11 @@ Goal: turn the proven Gate-1 loop into hardened, versioned, instrumented code. *
 
 ## v1 — Lovable product
 
-Goal: the import → first-insight loop in a real user's hands.
+Goal: the dump/import → organize → first-insight loop in a real user's hands.
 
-- [ ] Next.js app: **Timeline** (virtualized) + **Connected-notes card** (hero) + **weekly digest**
+- [ ] Next.js app, **five surfaces**: **Timeline** (virtualized) + **Connected-notes card** (hero) + **Write editor** (authored notes) + **Dynamic Organize tab** + **weekly digest**
+- [ ] Write editor (TipTap/ProseMirror); authored notes flow through the same ingestion path; **debounced re-extraction on edit** + neighborhood-scoped recompute + stale-connection tombstoning
+- [ ] Dynamic Organize tab: topical clustering job (HDBSCAN/k-means) over existing embeddings + Haiku cluster labels; computed view (notes never move); pin/rename + manual tags coexist with AI clusters
 - [ ] Importers: file-drop (Markdown/Kindle/Notion-export/Evernote) → **Readwise API** → Notion API
 - [ ] Onboarding: synchronous **fast-lane** (first insight in ~2–3 min) + **Batches API** bulk backfill
 - [ ] Two-axis feedback (`wrong`/`obvious`/`surface match`) writing to `connection_feedback`
@@ -36,7 +38,7 @@ Goal: the import → first-insight loop in a real user's hands.
 - [ ] Per-user personalized re-ranker trained on accumulated feedback
 - [ ] Bring-your-own-API-key strict-privacy tier (margin + researcher privacy wedge)
 - [ ] Promote `VectorIndex` → Qdrant if power-user corpora outgrow HNSW-in-Postgres
-- [ ] **Deferred-until-demanded:** rich editor, Organize tab, graph viz
+- [ ] **Deferred-until-demanded:** graph viz
 
 ## Open risks (carried, see ARCHITECTURE.md §10)
 

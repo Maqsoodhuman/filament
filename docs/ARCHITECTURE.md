@@ -18,7 +18,7 @@
 
 ## 1. Chosen architecture in one paragraph
 
-A deliberately thin **read-mostly Next.js web app** over a **single managed Postgres+pgvector system of record**, with the entire engineering budget spent on a **cleanly-bounded, model-versioned connection engine** (`engine/` Python library) running **async off every write path** on a durable queue. The engine is the proven Gate-1 loop: cached Haiku facet extraction → abstraction-space ANN (type-partitioned) → Sonnet reasoning → an **independent Sonnet verifier** → hard `q>=3` gate. Opus is rationed to the eval-judge role, never the per-pair hot path. We start with **two** deployables (api + workers), not three, and draw exactly one real seam — `VectorIndex` — because that is the only joint scale actually forces. Defensibility: not the cloneable algorithm but **ingestion breadth + accumulating per-user feedback data + workflow lock-in**, so connectors and the feedback spine are first-class from day one.
+A **Next.js web app** — where users both **write their own notes** and **import** existing ones, and browse them via a stable Timeline plus a **dynamic Organize tab** — over a **single managed Postgres+pgvector system of record**, with the bulk of the engineering budget spent on a **cleanly-bounded, model-versioned connection engine** (`engine/` Python library) running **async off every write path** on a durable queue. Authored and imported notes share one ingestion path, so the editor adds a surface without forking the engine. The engine is the proven Gate-1 loop: cached Haiku facet extraction → abstraction-space ANN (type-partitioned) → Sonnet reasoning → an **independent Sonnet verifier** → hard `q>=3` gate. Opus is rationed to the eval-judge role, never the per-pair hot path. We start with **two** deployables (api + workers), not three, and draw exactly one real seam — `VectorIndex` — because that is the only joint scale actually forces. Defensibility: not the cloneable algorithm but **ingestion breadth + accumulating per-user feedback data + workflow lock-in**, so connectors and the feedback spine are first-class from day one.
 
 ## 2. The stack
 
@@ -47,6 +47,11 @@ All stages async, idempotent, keyed by `(content_hash, model_version)`; no LLM/e
 
 **Opus 4.8** appears only as the periodically-recalibrated LLM eval judge (§8), never per-pair.
 
+### 3a. Edited notes & clustering (added for authored notes + the Organize tab)
+
+- **Re-extraction on edit.** An authored note's edit changes its `content_hash`. Because every stage is keyed by `(content_hash, model_version)`, the new hash is simply a cache miss → facets re-extract, the note re-enters retrieval, and its connections recompute **neighborhood-scoped** (only this note vs the index — existing unrelated pairs are untouched). Stale connections tied to the old hash are tombstoned. Re-extraction is **debounced** (fires on save-settle, not per keystroke) so editing doesn't churn model spend.
+- **Clustering (the Organize tab).** A separate worker job clusters each user's **topical note embeddings** (HDBSCAN, or k-means with auto-k) into themes; a single cheap **Haiku** call names each cluster. Runs after an import completes and on the nightly beat. Output is written to `note_clusters` (versioned) and is a *view* — it never mutates `notes`. This reuses vectors the engine already produces, so the marginal cost is the clustering compute + one Haiku label call per cluster.
+
 ## 4. The N² scaling solution
 
 The all-pairs matrix is **never materialized**.
@@ -62,6 +67,8 @@ The all-pairs matrix is **never materialized**.
 
 Every path terminates in **one `normalize → enqueue` entrypoint**, so adding a source never touches the engine. Idempotent via `content_hash` (overlapping sources — same highlight in Kindle and Readwise — dedup and never double-bill).
 
+**In-app authored notes are an ingestion source, not a special case.** A note written in the editor (§6.3) enters the exact same entrypoint as an import. This is what keeps the editor cheap to add: the engine doesn't know or care whether a note was typed or imported.
+
 **Import connectors (priority order = breadth is the moat):**
 1. **File-drop first** (no OAuth, unblocks everyone day one): Markdown/Obsidian zip, Kindle `My Clippings.txt`, Notion Markdown+CSV export, Evernote `.enex`, OneNote export.
 2. **Readwise API** (clean official REST, richest highlights+metadata, the single best beachhead).
@@ -74,11 +81,13 @@ Every path terminates in **one `normalize → enqueue` entrypoint**, so adding a
 
 ## 6. UI/UX
 
-**Three surfaces only.** No rich editor, no Organize tab, no graph viz in v1 (all commodity, all deferred).
+**Five surfaces in v1.** Graph viz remains deferred (commodity, low retention). Both **writing your own notes** and the **dynamic Organize tab** are first-class — the product is dump-and-connect, not read-only.
 
 1. **Timeline (home):** notes in creation-date order, virtualized, instant. The stable home — notes never physically move; organization is computed views layered on top.
 2. **★ Connected-notes card (the hero, in-context):** opening any note shows its 1–3 highest-q connections inline — partner-note snippet + one-sentence WHY + facet-type badge. Two one-click controls: **Useful** (upvote) and **dismiss/downvote** with optional reason — **`wrong` → validity label, `obvious` → non-obviousness label, `surface match` → third signal** (two-axis capture; turns one click into independent tuning signal for both verifier axes). Optimistic update; every action writes `connection_feedback`.
-3. **Connections digest:** weekly "connections found in your library this week" email/feed — the re-engagement loop for the read-mostly user.
+3. **Write editor (normal notes):** a rich editor (TipTap/ProseMirror) to author and edit notes in-app. An authored note is **just another ingestion source** — it flows into the *same* `normalize → enqueue → engine` pipeline as an import (no separate engine path). The only new behavior: an edit changes the note's `content_hash`, which **debounced-triggers re-extraction** of that note's facets and a neighborhood-scoped re-match (see §3a). The note's connected-notes card lights up as the engine finishes, so writing a note surfaces what it connects to.
+4. **Dynamic Organize tab (dynamic notes):** an auto-clustered, theme-based view of the whole library. It is a **computed view, never a move** — the Timeline stays the stable home; clusters are a lens on top. It reuses the **topical embeddings the engine already computes** (the same vectors used in §3 to *reject* same-topic pairs), so it adds almost no new model cost. Re-clusters after import and on a nightly job. Users can pin/rename clusters; manual tags coexist with AI clusters (never forced to trust the AI to find a note).
+5. **Connections digest:** weekly "connections found in your library this week" email/feed — the re-engagement loop.
 
 **Import → first-insight onboarding (the activation metric):**
 1. Pick source → OAuth or file upload.
@@ -119,9 +128,9 @@ First-class infrastructure; no automatic ground truth for analogy quality.
 
 **v0 — spike-to-product (the moat, headless).** Harden the Gate-1 engine as the `engine/` library: extraction → embedding → type-partitioned ANN → reasoner → independent verifier → q≥3 gate, all keyed by content_hash + model_version. Stand up Postgres+pgvector schema, the golden-set offline eval runner wired into CI, and the prompt/version tables. No UI yet; validate ≥75% precision reproducibly on real heterogeneous libraries.
 
-**v1 — lovable product.** Next.js app (timeline + hero connected-notes card + digest); file-drop + **Readwise** + Notion importers; the **import→first-insight fast-lane + Batches bulk** flow; two-axis dismiss/feedback writing to the spine; Dramatiq/Redis async pipeline; generic-skeleton suppression + per-import spend ceilings live; shadow mode + online precision dashboards.
+**v1 — lovable product.** Next.js app with **five surfaces**: timeline + hero connected-notes card + **write editor (authored notes)** + **dynamic Organize tab** + weekly digest. File-drop + **Readwise** + Notion importers; the **import→first-insight fast-lane + Batches bulk** flow; debounced re-extraction on note edit + neighborhood-scoped recompute; topical clustering job behind the Organize tab; two-axis dismiss/feedback writing to the spine; Dramatiq/Redis async pipeline; generic-skeleton suppression + per-import spend ceilings live; shadow mode + online precision dashboards.
 
-**v2 — breadth, defensibility, scale.** Passive capture (browser extension, email-in, share-sheet); Apple Notes + OneNote connectors; per-user personalized re-ranker trained on accumulated feedback; **bring-your-own-API-key strict-privacy tier** (margin lever + privacy wedge for the researcher persona); promote `VectorIndex` to Qdrant if power-user corpora demand it. Deferred-until-demanded: rich editor, Organize tab, graph viz.
+**v2 — breadth, defensibility, scale.** Passive capture (browser extension, email-in, share-sheet); Apple Notes + OneNote connectors; per-user personalized re-ranker trained on accumulated feedback; **bring-your-own-API-key strict-privacy tier** (margin lever + privacy wedge for the researcher persona); promote `VectorIndex` to Qdrant if power-user corpora demand it. Deferred-until-demanded: graph viz.
 
 ## 10. Top 3 open risks the architecture does NOT fully solve
 

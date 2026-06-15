@@ -15,7 +15,7 @@ Existing note apps (Notion, Obsidian, Roam, Mem) are either passive databases or
 
 - **Moat:** the structural connection engine + ingestion breadth + accumulating per-user feedback. (The algorithm is cloneable; the data flywheel and connector breadth are not.)
 - **Not the moat:** the graph visualization, topical similarity (both commodity).
-- **Strategy:** import-first, read-mostly. Lead with importers + the engine + one hero surface (in-context "connected notes" with a one-line *why*). Defer the rich editor, organize tab, and graph viz.
+- **Strategy:** import-first to kill cold-start, but you can also **write your own notes** and browse them via a **dynamic auto-Organize tab** — both feed the same engine. The hero surface is the in-context "connected notes" card (with a one-line *why*). Only the graph viz is deferred.
 
 ## Validation status
 

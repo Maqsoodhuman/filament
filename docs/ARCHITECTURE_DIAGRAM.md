@@ -6,9 +6,11 @@ Rendered with Mermaid. See [ARCHITECTURE.md](ARCHITECTURE.md) for the full spec.
 
 ```mermaid
 flowchart TB
-    subgraph Client["🖥️ Client — Next.js (App Router)"]
+    subgraph Client["🖥️ Client — Next.js (App Router) · 5 surfaces"]
         TL["Timeline (home)<br/>virtualized notes"]
         CC["★ Connected-notes card<br/>1-3 connections + WHY"]
+        WR["Write editor<br/>author/edit notes"]
+        OR["Dynamic Organize tab<br/>auto-clusters (computed view)"]
         DG["Weekly digest"]
         IMP["Import / onboarding UI"]
     end
@@ -17,7 +19,8 @@ flowchart TB
         API["Auth · thin CRUD · search<br/>feedback writes<br/>(NO LLM work here)"]
     end
 
-    subgraph Ingest["📥 Ingestion"]
+    subgraph Ingest["📥 Ingestion — one entrypoint for all sources"]
+        AUTH["Authored notes<br/>(from Write editor)"]
         CONN["Connectors:<br/>file-drop · Readwise · Notion<br/>· Apple Notes · OneNote"]
         PASS["Passive capture (v1.1):<br/>extension · email-in · share-sheet"]
         NORM["normalize → enqueue<br/>(content_hash dedup)"]
@@ -26,6 +29,7 @@ flowchart TB
     subgraph Async["⚙️ Async workers — Dramatiq on Redis (Fly.io)"]
         Q[("Redis queue")]
         ENGINE["engine/ library (Python/FastAPI)<br/>extract → embed → retrieve → reason → verify → q-gate"]
+        CLUST["Clustering job<br/>topical embeddings → themes<br/>(feeds Organize tab)"]
         SCHED["APScheduler beat<br/>nightly re-scan + digests"]
     end
 
@@ -46,16 +50,21 @@ flowchart TB
     end
 
     Client --> Edge
+    WR -. "save (debounced)" .-> API
+    AUTH --> NORM
     CONN --> NORM
     PASS --> NORM
     NORM --> Q
     Edge --> PG
     Q --> ENGINE
     SCHED --> Q
+    SCHED --> CLUST
     ENGINE --> ANTH
     ENGINE --> VOY
     ENGINE --> PG
     ENGINE --> S3
+    CLUST --> PG
+    OR -. reads clusters .-> API
     CC -. "two-axis feedback" .-> API
     API -. writes .-> PG
     PG --> GOLD --> CI
