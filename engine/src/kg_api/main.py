@@ -21,6 +21,7 @@ from fastapi import FastAPI, HTTPException
 import re
 from collections import Counter
 
+from kg_api.repo import StoredConnection, make_notes_repo
 from kg_api.schemas import (
     ClusterOut,
     ConnectionOut,
@@ -68,17 +69,52 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="Knowledge Graph API", version="0.1.0", lifespan=lifespan)
 
-# --- dev-only in-memory state (Phase 2 replaces with Postgres + workers) ---
+# --- in-memory state (default dev/demo path; unchanged from v0) -------------
+# When KG_STORE_BACKEND=postgres these globals stay empty and the Postgres branch (below) runs
+# instead — notes + surfaced connections persist via kg_api.repo.PgNotesRepo and survive restart.
 _notes: dict[str, Note] = {}
 _created: dict[str, str] = {}
 _jobs: dict[str, JobOut] = {}
 _engine: Engine | None = None
 
 
+def _settings() -> Settings:
+    return Settings()  # provider + store_backend from env
+
+
+def _pg_mode() -> bool:
+    return _settings().store_backend == "postgres"
+
+
+# --- Postgres-mode helpers (only used when KG_STORE_BACKEND=postgres) --------
+_repo_singleton = None
+
+
+def _repo():
+    """The API persistence repo (Postgres-backed in pg mode). Lazily built so a fresh process
+    reads existing rows straight from the DB — that is what makes the API stateful."""
+    global _repo_singleton
+    if _repo_singleton is None:
+        _repo_singleton = make_notes_repo(_settings())
+    return _repo_singleton
+
+
+def _pg_engine() -> Engine:
+    """Build an engine hydrated with every persisted note, on the configured engine backend.
+
+    The engine's own caches (facets/topical/index) are not the API's source of record — notes and
+    surfaced connections are (the repo). So a fresh process re-ingests the persisted notes into a
+    new engine before running connections. The facet cache + pgvector index make re-ingest cheap
+    and never re-bills extraction (cached by content_hash, model_version)."""
+    eng = Engine(_settings())
+    eng.ingest(_repo().all_notes())
+    return eng
+
+
 def _eng() -> Engine:
     global _engine
     if _engine is None:
-        _engine = Engine(Settings())  # provider from env; fake by default
+        _engine = Engine(_settings())  # provider from env; fake by default
     return _engine
 
 
@@ -121,19 +157,51 @@ def health() -> dict[str, str]:
 def create_note(payload: NoteCreate) -> NoteOut:
     nid = "n_" + uuid.uuid4().hex[:10]
     note = Note(id=nid, title=payload.title, text=payload.body, domain=payload.source)
+    if _pg_mode():
+        return _pg_create_note(note)
     _notes[nid] = note
     _created[nid] = _now()
     _eng().ingest([note])  # dev: ingest inline. PROD: enqueue.
     return _note_out(note)
 
 
+def _pg_create_note(note: Note) -> NoteOut:
+    """Persist the note, run the engine over the full persisted corpus, persist surfaced
+    connections. The engine runs HERE on the write path (no Redis/Dramatiq this round); reads stay
+    LLM-free. When the async queue lands, this body moves into a worker and the handler enqueues."""
+    repo = _repo()
+    stored = repo.add_note(note)
+    eng = _pg_engine()  # hydrated with all persisted notes (incl. this one)
+    repo.upsert_connections(eng.surfaced())
+    return _pg_note_out(repo, stored)
+
+
+def _pg_note_out(repo, stored) -> NoteOut:
+    count = len(repo.list_connections(stored.note.id))
+    n = stored.note
+    return NoteOut(
+        id=n.id, title=n.title, body=n.text, source=n.domain or "authored",
+        created_at=stored.created_at, connection_count=count,
+    )
+
+
 @app.get("/notes", response_model=list[NoteOut])
 def list_notes() -> list[NoteOut]:
+    if _pg_mode():
+        repo = _repo()
+        return [_pg_note_out(repo, s) for s in repo.list_notes()]
     return [_note_out(n) for n in sorted(_notes.values(), key=lambda x: _created.get(x.id, ""), reverse=True)]
 
 
 @app.get("/notes/{note_id}", response_model=NoteDetail)
 def get_note(note_id: str) -> NoteDetail:
+    if _pg_mode():
+        repo = _repo()
+        stored = repo.get_note(note_id)
+        if stored is None:
+            raise HTTPException(404, "note not found")
+        conns = [_conn_out(c) for c in repo.list_connections(note_id)]
+        return NoteDetail(note=_pg_note_out(repo, stored), connections=conns)
     n = _notes.get(note_id)
     if n is None:
         raise HTTPException(404, "note not found")
@@ -143,6 +211,16 @@ def get_note(note_id: str) -> NoteDetail:
 
 @app.post("/notes/{note_id}/find-connections", response_model=JobOut)
 def find_connections(note_id: str) -> JobOut:
+    if _pg_mode():
+        repo = _repo()
+        if repo.get_note(note_id) is None:
+            raise HTTPException(404, "note not found")
+        # No LLM on a read path: connections were judged + persisted at POST /notes; report the
+        # persisted count. (When the async queue lands this enqueues a scoped re-judge.)
+        surfaced = repo.list_connections(note_id)
+        job = JobOut(job_id="j_" + uuid.uuid4().hex[:10], status="done", surfaced_count=len(surfaced))
+        _jobs[job.job_id] = job
+        return job
     if note_id not in _notes:
         raise HTTPException(404, "note not found")
     # PROD: enqueue a scoped job and return queued. DEV: run inline and report done.
@@ -154,6 +232,15 @@ def find_connections(note_id: str) -> JobOut:
 
 @app.post("/scan", response_model=JobOut)
 def scan(_req: ScanRequest) -> JobOut:
+    if _pg_mode():
+        repo = _repo()
+        # Re-run the engine over the full persisted corpus and persist the surfaced connections.
+        eng = _pg_engine()
+        surfaced = eng.surfaced()
+        repo.upsert_connections(surfaced)
+        job = JobOut(job_id="j_" + uuid.uuid4().hex[:10], status="done", surfaced_count=len(surfaced))
+        _jobs[job.job_id] = job
+        return job
     surfaced = _surfaced()
     job = JobOut(job_id="j_" + uuid.uuid4().hex[:10], status="done", surfaced_count=len(surfaced))
     _jobs[job.job_id] = job
@@ -162,6 +249,8 @@ def scan(_req: ScanRequest) -> JobOut:
 
 @app.get("/connections", response_model=list[ConnectionOut])
 def list_connections(note_id: str | None = None) -> list[ConnectionOut]:
+    if _pg_mode():
+        return [_conn_out(c) for c in _repo().list_connections(note_id)]
     out = []
     for c in _surfaced():
         if note_id and not (c.a_id == note_id or c.b_id == note_id):
@@ -223,15 +312,20 @@ def list_clusters() -> list[ClusterOut]:
     """Organize tab: cluster topical embeddings into themed sections (k-means over the vectors
     the engine already computes). DEV baseline; PROD swaps in HDBSCAN + Haiku labels + multi-section
     membership. Robust to connection density (unlike a connection-graph component approach)."""
-    eng = _eng()
-    ids = [nid for nid in _notes if nid in eng._topical]
+    if _pg_mode():
+        eng = _pg_engine()  # hydrates topical vectors for the persisted notes
+        notes_by_id = {n.id: n for n in _repo().all_notes()}
+    else:
+        eng = _eng()
+        notes_by_id = _notes
+    ids = [nid for nid in notes_by_id if nid in eng._topical]
     if not ids:
         return []
     k = max(1, min(4, len(ids)))
     groups = _kmeans(ids, [eng._topical[nid] for nid in ids], k)
     clusters = []
     for i, (_g, gids) in enumerate(sorted(groups.items(), key=lambda kv: -len(kv[1]))):
-        members = [_notes[nid] for nid in gids]
+        members = [notes_by_id[nid] for nid in gids]
         clusters.append(
             ClusterOut(
                 id=f"cl_{i}",
@@ -244,6 +338,7 @@ def list_clusters() -> list[ClusterOut]:
 
 
 def _conn_out(c) -> ConnectionOut:
+    # Works for both kg_engine.Connection and repo.StoredConnection (same field surface + .q).
     return ConnectionOut(
         id="c_" + (c.a_id + c.b_id)[:16],
         a_id=c.a_id, b_id=c.b_id, a_title=c.a_title, b_title=c.b_title,
