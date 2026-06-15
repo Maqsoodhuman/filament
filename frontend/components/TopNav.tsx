@@ -1,4 +1,5 @@
 import Link from "next/link";
+import CommandPaletteHint from "@/components/CommandPaletteHint";
 
 // TopNav — design system §3. Single persistent bar: app mark + three text
 // tabs (sentence case), active tab marked by 500 weight + 1.5px neutral
@@ -43,7 +44,7 @@ export default function TopNav({
             })}
           </nav>
         </div>
-        <span className="text-meta text-text-tertiary">⌘K</span>
+        <CommandPaletteHint />
       </div>
     </header>
   );
