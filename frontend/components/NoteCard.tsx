@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { components } from "@/lib/api-types";
 import ConnectionCountBadge from "./ConnectionCountBadge";
 
@@ -7,6 +8,7 @@ type NoteOut = components["schemas"]["NoteOut"];
 // Flat white card, hairline border, no shadow/gradient. Title (h2, 500) +
 // 1-2 line body preview (secondary text) + created date (meta). The lone blue
 // element is the ConnectionCountBadge; everything else stays neutral.
+// The whole card is a Link to the note detail route — the core product moment.
 function formatDate(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
@@ -19,7 +21,10 @@ function formatDate(iso: string): string {
 
 export default function NoteCard({ note }: { note: NoteOut }) {
   return (
-    <article className="rounded-md border-hairline border border-border-hairline bg-surface p-4 transition-colors duration-[120ms] ease-confirm hover:bg-surface-hover">
+    <Link
+      href={`/notes/${note.id}`}
+      className="block rounded-md border-hairline border border-border-hairline bg-surface p-4 transition-colors duration-[120ms] ease-confirm hover:bg-surface-hover"
+    >
       <div className="flex items-start justify-between gap-4">
         <h2 className="text-h2 text-text-primary">{note.title}</h2>
         <div className="shrink-0">
@@ -32,6 +37,6 @@ export default function NoteCard({ note }: { note: NoteOut }) {
       <div className="mt-3 text-meta text-text-secondary">
         {formatDate(note.created_at)}
       </div>
-    </article>
+    </Link>
   );
 }
