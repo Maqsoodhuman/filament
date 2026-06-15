@@ -54,6 +54,26 @@ def test_facets_cached_by_content_hash() -> None:
     assert eng.store.get_facets(n.chash, eng.mv) is not None
 
 
+def test_fake_extraction_emits_varied_facet_types() -> None:
+    # The fake provider must emit >=2 DISTINCT facet types for a multi-word note, so the wiring
+    # path produces varied connection KINDs (not only "same topic" from a lone abstract_pattern).
+    eng = _engine()
+    facets = eng.router.extract(
+        "...extract the STRUCTURAL facets...",
+        "central bank precommit binding rule discretion inflation",
+    )["facets"]
+    types = [f["type"] for f in facets]
+    assert len(set(types)) >= 2, f"expected >=2 distinct facet types, got {types}"
+    # determinism: same input -> same facet types
+    again = eng.router.extract(
+        "...extract the STRUCTURAL facets...",
+        "central bank precommit binding rule discretion inflation",
+    )["facets"]
+    assert [f["type"] for f in again] == types
+    # primary facet stays at/above the salience floor so it always survives retrieval
+    assert facets[0]["salience"] >= Settings().salience_floor
+
+
 def test_eval_harness_runs() -> None:
     golden = pathlib.Path(__file__).resolve().parents[1] / "data" / "golden" / "notes.json"
     report, surfaced = run_eval(str(golden), Settings(provider="fake"))
