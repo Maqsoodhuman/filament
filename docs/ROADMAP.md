@@ -23,6 +23,22 @@ Goal: turn the proven Gate-1 loop into hardened, versioned, instrumented code. *
 
 **Recommended pre-v0 de-risk:** run the *floor experiment* (messy realistic corpus) — see [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md).
 
+## Backend production hardening (from `docs/BACKEND_GUIDE.md`)
+
+Required to take the v0 engine to the FastAPI + Dramatiq + Postgres production system. Prioritized:
+
+- [x] Fold retrieval/gate knobs + embed dimension into the version key (`config_hash`) — was a silent stale-cache bug
+- [x] Use bare model-id aliases (`claude-haiku-4-5`), not dated ids
+- [ ] **#1 — persist store/index/dedup into Postgres+pgvector** before deploy; at-least-once delivery makes in-memory dedup unsafe. `UNIQUE(content_hash, model_version)` + `ON CONFLICT`; deterministic Dramatiq `message_id`
+- [ ] Make providers + pipeline **async** (`httpx.AsyncClient`, `anthropic.AsyncAnthropic`, `anyio` task groups + `CapacityLimiter`); engine runs in workers, never the HTTP route
+- [ ] Constrain **structured output at the provider** (Anthropic `output_config.format` / Ollama JSON-schema) + `extra='forbid'` on strict schemas; retire the prompt-and-salvage path
+- [ ] **Cluster-wide token-aware rate governor** (Redis token bucket per provider/model; Ollama semaphore) in the model_router seam
+- [ ] Config → **pydantic-settings**; deps → **uv** + committed `uv.lock`; CI = ruff + `mypy --strict` + fake-provider pytest + **eval deploy-gate** (recall floor AND garbage ceiling)
+- [ ] Bulk import via **Anthropic Batches API** with a dedicated `bulk` queue + pre-enqueue spend/adaptive-K gate
+- [ ] **Observability** (OTel/OpenLLMetry → Logfire, Sentry with note-text scrubbing) + **Clerk** JWT auth + `structlog`
+- [ ] pgvector HNSW tuning (`m=24–32`, `ef_construction=128–200`, runtime `ef_search`) + **0.8 iterative scans** so filter+ANN doesn't under-return (recall is the moat); `vector_cosine_ops` + `<=>`
+- [ ] Postgres **RLS** keyed on `user_id` (fail-closed multi-tenant isolation) + `testcontainers` integration tests
+
 ## v1 — Lovable product
 
 Goal: the dump/import → organize → first-insight loop in a real user's hands.

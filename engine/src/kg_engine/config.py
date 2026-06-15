@@ -36,8 +36,8 @@ class Settings:
     verify_model: str = _env("KG_VERIFY_MODEL", "qwen2.5:14b")
     embed_model: str = _env("KG_EMBED_MODEL", "nomic-embed-text")
 
-    # Anthropic assignments (used only when provider="anthropic")
-    anthropic_extract_model: str = _env("KG_ANTHROPIC_EXTRACT", "claude-haiku-4-5-20251001")
+    # Anthropic assignments (used only when provider="anthropic"). Use bare aliases, not dated ids.
+    anthropic_extract_model: str = _env("KG_ANTHROPIC_EXTRACT", "claude-haiku-4-5")
     anthropic_reason_model: str = _env("KG_ANTHROPIC_REASON", "claude-sonnet-4-6")
     anthropic_verify_model: str = _env("KG_ANTHROPIC_VERIFY", "claude-sonnet-4-6")
 
@@ -56,8 +56,10 @@ class Settings:
     fake_dim: int = 96
 
     def model_version(self) -> str:
-        """Cache key component. Bump implicitly whenever models or prompts change."""
-        basis = "|".join(
+        """Cache/provenance key. Bumps implicitly whenever models, prompts, OR the retrieval/gate
+        config change — otherwise a threshold tweak would silently serve stale cached connections
+        under an unchanged version stamp (backend-guide change #3)."""
+        models = "|".join(
             [
                 self.provider,
                 self.extract_model,
@@ -70,4 +72,23 @@ class Settings:
                 PROMPT_VERSION,
             ]
         )
-        return "mv_" + hashlib.sha256(basis.encode()).hexdigest()[:12]
+        return "mv_" + hashlib.sha256(f"{models}#{self.config_hash()}".encode()).hexdigest()[:12]
+
+    def config_hash(self) -> str:
+        """Hash of everything that changes engine OUTPUT besides the models/prompts: retrieval +
+        gating knobs and the embedding dimension (768-d local and 1024-d Voyage cannot be mixed)."""
+        basis = "|".join(
+            str(x)
+            for x in (
+                self.top_k,
+                self.q_threshold,
+                self.salience_floor,
+                self.topical_reject,
+                self.hub_quarantine,
+                self.hub_radius,
+                self.max_surfaced_per_note,
+                # embedding dim is provider-determined; fake is explicit, real is named by embed_model
+                self.fake_dim if self.provider == "fake" else self.embed_model,
+            )
+        )
+        return "cfg_" + hashlib.sha256(basis.encode()).hexdigest()[:10]

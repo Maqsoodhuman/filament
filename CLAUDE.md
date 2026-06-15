@@ -79,3 +79,6 @@ See `docs/DESIGN_DECISIONS.md` Part B for the experiment that justifies #4 and #
 | `docs/ARCHITECTURE_DIAGRAM.md` | Mermaid diagrams of system, pipeline, ingestion, N² solution. |
 | `docs/DESIGN_DECISIONS.md` | *Why* the product and architecture are shaped this way — strategy debate + the Gate-1 experiment. |
 | `docs/ROADMAP.md` | What ships in v0 / v1 / v2 and the carried open risks. |
+| `docs/TECH_STACK.md` | Finalized tech stack table. |
+| `docs/DESIGN_SYSTEM.md` | Build-ready UI design system (tokens, components, per-surface). |
+| `docs/BACKEND_GUIDE.md` | Backend packages, best-practice patterns, project layout — read before production backend work. |

@@ -47,6 +47,7 @@ See [docs/DESIGN_DECISIONS.md](docs/DESIGN_DECISIONS.md) for the full reasoning 
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Phased build plan (v0 → v1 → v2) and open risks. |
 | [docs/DESIGN_SYSTEM.md](docs/DESIGN_SYSTEM.md) | Build-ready design system — tokens, components, per-surface guidance (from a 5-reference UI study). |
 | [docs/TECH_STACK.md](docs/TECH_STACK.md) | Finalized tech stack table (every layer + the Community/Premium split). |
+| [docs/BACKEND_GUIDE.md](docs/BACKEND_GUIDE.md) | Backend engineering guide — finalized packages, best-practice patterns, project layout, gotchas (from a 5-specialist review). |
 
 ## Stack at a glance
 
