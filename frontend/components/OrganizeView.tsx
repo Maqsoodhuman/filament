@@ -147,6 +147,27 @@ export default function OrganizeView({
     );
   }
 
+  // Zero-cluster: one centered empty state, not three half-empty panes
+  // (empty-states — a single helpful message beats placeholder chrome).
+  if (clusters.length === 0) {
+    return (
+      <div className="flex flex-col">
+        <div className="flex items-center gap-3 border-b border-hairline border-border-hairline px-4 py-2">
+          <span className="truncate rounded-sm bg-surface-hover px-3 py-1 text-ui font-medium text-text-primary">
+            Research library
+          </span>
+        </div>
+        <div className="flex min-h-[400px] flex-col items-center justify-center px-4 py-12 text-center">
+          <p className="text-ui text-text-secondary">No sections yet</p>
+          <p className="mt-1 max-w-[420px] text-meta text-text-tertiary">
+            Run Find connections to let the engine cluster your library into
+            sections.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   // Shared row renderers ---------------------------------------------------
   const sectionRows = (
     <nav className="flex flex-col">
@@ -306,12 +327,12 @@ export default function OrganizeView({
           <div className="truncate px-4 pt-3 text-meta uppercase tracking-wide text-text-secondary">
             {section ? section.label : "Section"}
           </div>
+          {/* Only "Pages" is wired today. Table/Board are deferred, so we don't
+              render inert tabs (dead affordance — forms/state-clarity). */}
           <div className="flex items-center gap-4 border-b border-hairline border-border-hairline px-4 pb-2 pt-2">
             <span className="text-meta font-medium text-text-primary [border-bottom:1.5px_solid_var(--text-primary)] pb-[2px]">
               Pages
             </span>
-            <span className="text-meta text-text-secondary">Table</span>
-            <span className="text-meta text-text-secondary">Board</span>
           </div>
           {pageRows}
         </div>

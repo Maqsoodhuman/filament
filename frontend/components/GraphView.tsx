@@ -31,8 +31,10 @@ function partnerTitle(c: ConnectionOut, hubId: string): string {
   return c.a_id === hubId ? c.b_title : c.a_title;
 }
 
-// Truncate a label so node text stays inside its pill.
-function clip(s: string, n = 22): string {
+// Truncate a label so node text stays inside its pill. Desktop has horizontal
+// room, so the partner-node title clip is generous (28); the hub pill clip is
+// passed explicitly at the call site.
+function clip(s: string, n = 28): string {
   return s.length > n ? s.slice(0, n - 1) + "…" : s;
 }
 
@@ -249,11 +251,26 @@ export default function GraphView({
                   other. One label group per node → no per-edge collisions. */}
               {placed.map(({ p, x, y, angle }) => {
                 const blue = KIND_META[p.primary].blue;
-                // Pull the label 56px back toward the hub from the node.
-                const lx = CX + (RADIUS - 64) * Math.cos(angle);
-                const ly = CY + (RADIUS - 64) * Math.sin(angle);
                 const label = p.primary;
                 const w = label.length * 6.2 + 30;
+                // Pull the label back toward the hub from the node. For
+                // near-horizontal edges (large |cos|) the default 64px pullback
+                // can land the pill atop the 200px hub pill (half-width 100),
+                // so we pull LESS back (push the label outward toward the node)
+                // until its near edge clears the hub pill by ≥8px.
+                const HUB_HALF_W = 100;
+                const GAP = 8;
+                let pullback = 64;
+                const c = Math.abs(Math.cos(angle));
+                if (c > 0.001) {
+                  // distance from CX at which the label center clears the pill
+                  const minCenterDx = HUB_HALF_W + GAP + w / 2;
+                  // |lx - CX| = (RADIUS - pullback) * |cos| must be >= minCenterDx
+                  const maxPullback = RADIUS - minCenterDx / c;
+                  if (maxPullback < pullback) pullback = Math.max(0, maxPullback);
+                }
+                const lx = CX + (RADIUS - pullback) * Math.cos(angle);
+                const ly = CY + (RADIUS - pullback) * Math.sin(angle);
                 return (
                   <g key={`label-${p.id}`}>
                     <rect
