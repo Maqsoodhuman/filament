@@ -33,6 +33,16 @@ say which ones you could not capture statically and what you'd need to test them
 If a `DESIGN_SYSTEM.md` (or design tokens) exists in the repo, **read it and review against it** —
 deviations from the system's own tokens/rules are defects, not opinions.
 
+## The rule checklist (apply it)
+
+Read **`.claude/skills/ui-ux-qa/checklist.md`** — a priority-ranked taxonomy of ~99 concrete,
+standards-cited rules (WCAG 2.2 / Apple HIG / Material / Core Web Vitals) across 10 categories,
+adapted from the `ui-ux-pro-max` rule set. **Review in priority order 1→10** (Accessibility and
+Touch are CRITICAL — weight Blocker/Major toward the higher tiers) and **cite the specific rule id in
+each finding** (e.g. "violates `touch-target-size`", "missing `focus-states`", "fails `inline-
+validation`"). The checklist is the authoritative rubric; the categories below summarize what each
+covers.
+
 ## What you check
 
 **Usability** — Can the user complete the primary action without guessing? Do clickable things look
