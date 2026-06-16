@@ -26,6 +26,14 @@ _FAKE_FACET_TYPES = (
 
 _TOKEN = re.compile(r"[a-z0-9]+")
 
+# Tokens too common/structural to be "salient" — kept out of generated statements and overlap.
+_STOP = frozenset(
+    "the a an and or but of to in on at by for with as is are was were be been being "
+    "this that these those it its their his her they them we you i he she who whom "
+    "into onto from up down out off over under again than then so not no nor can will "
+    "would could should may might must do does did has have had note notes a b".split()
+)
+
 
 def _stable_hash(s: str) -> int:
     """Deterministic, process-independent hash (Python's hash() is salted per run)."""
@@ -34,6 +42,36 @@ def _stable_hash(s: str) -> int:
 
 def _tokens(text: str) -> list[str]:
     return _TOKEN.findall(text.lower())
+
+
+def _salient(text: str) -> list[str]:
+    """Content tokens (deduped, order-preserving) usable in a human-facing statement."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for t in _tokens(text):
+        if len(t) > 3 and t not in _STOP and t not in seen:
+            seen.add(t)
+            out.append(t)
+    return out
+
+
+def _split_notes(user: str) -> tuple[str, str]:
+    """Pull the two note bodies out of a reasoning/verifier user message.
+
+    Both REASON_USER and VERIFY_USER lay the notes out as `NOTE A ...:` / `NOTE B ...:`.
+    Falls back to splitting the whole message in half if the markers are absent.
+    """
+    ia = user.find("NOTE A")
+    ib = user.find("NOTE B")
+    if ia != -1 and ib != -1 and ib > ia:
+        a = user[ia:ib]
+        b = user[ib:]
+        # drop everything up to the first ':' on each marker line (the "NOTE A (domain):" prefix)
+        a = a.split(":", 1)[1] if ":" in a else a
+        b = b.split(":", 1)[1] if ":" in b else b
+        return a, b
+    mid = len(user) // 2
+    return user[:mid], user[mid:]
 
 
 class Provider(Protocol):
@@ -103,13 +141,97 @@ class FakeProvider:
                 )
             return {"facets": facets}
         if "skeptical reviewer" in system:
-            return {"validity": 4, "nonobviousness": 4, "generic": False, "reason": "fake"}
+            return self._fake_verify(user)
         # reasoning
+        return self._fake_reason(user)
+
+    # -- deterministic, varied fake outputs (no network, no "fake" leaking to users) --
+
+    @staticmethod
+    def _fake_reason(user: str) -> dict:
+        """Build a SHORT statement deterministically derived from the two notes' salient tokens,
+        so different pairs get visibly different statements. Never emits the word 'fake'."""
+        a_text, b_text = _split_notes(user)
+        a_sal, b_sal = _salient(a_text), _salient(b_text)
+        a_set, b_set = set(a_sal), set(b_sal)
+
+        shared = [t for t in a_sal if t in b_set][:3]
+        a_only = [t for t in a_sal if t not in b_set][:2]
+        b_only = [t for t in b_sal if t not in a_set][:2]
+
+        # Pick a template deterministically from the pair's salient vocabulary.
+        key = " ".join(sorted(a_set | b_set))
+        anchor = shared[0] if shared else (a_sal[0] if a_sal else "pattern")
+        a_term = a_only[0] if a_only else (a_sal[0] if a_sal else "one")
+        b_term = b_only[0] if b_only else (b_sal[0] if b_sal else "the other")
+
+        templates = [
+            f"Both turn on the same {anchor} dynamic despite different surfaces.",
+            f"A shared mechanism links {a_term} and {b_term} through {anchor}.",
+            f"The {anchor} structure recurs: {a_term} mirrors {b_term}.",
+            f"Each resolves the same tension around {anchor}.",
+            f"{a_term} and {b_term} are two instances of one {anchor} pattern.",
+        ]
+        statement = templates[_stable_hash(key) % len(templates)]
         return {
             "connection": True,
-            "shared_structure": "fake shared structure",
-            "why": "fake",
-            "statement": "These two notes share a structural pattern (fake).",
+            "shared_structure": f"shared {anchor} structure",
+            "why": f"links {a_term} to {b_term} without sharing topic",
+            "statement": statement,
+        }
+
+    @staticmethod
+    def _fake_verify(user: str) -> dict:
+        """Return a deterministic MIX of verdicts so surfaced counts vary across notes.
+
+        Pairs with strong salient-token overlap (genuinely similar notes — e.g. the
+        threshold/cascade pair the wiring test relies on) always pass at q>=3. Among the
+        rest, a stable hash of the pair text routes a deterministic fraction to a
+        sub-threshold verdict (generic, or nonobviousness=2) so they do NOT surface."""
+        a_text, b_text = _split_notes(user)
+        a_set, b_set = set(_salient(a_text)), set(_salient(b_text))
+        inter = a_set & b_set
+        union = a_set | b_set
+        overlap = len(inter) / len(union) if union else 0.0
+
+        # Strong shared vocabulary => clearly genuine; always surface (keeps the wiring test green).
+        if len(inter) >= 2 or overlap >= 0.25:
+            return {
+                "validity": 4,
+                "nonobviousness": 4,
+                "generic": False,
+                "reason": "shared structure is grounded in both notes",
+            }
+
+        # Otherwise split deterministically into a non-uniform mix of verdicts.
+        bucket = _stable_hash("|".join(sorted(union))) % 5
+        if bucket == 0:
+            return {
+                "validity": 4,
+                "nonobviousness": 2,
+                "generic": False,
+                "reason": "real but largely the same idea (low nonobviousness)",
+            }
+        if bucket == 1:
+            return {
+                "validity": 3,
+                "nonobviousness": 3,
+                "generic": True,
+                "reason": "shared structure is too generic to be meaningful",
+            }
+        if bucket == 2:
+            return {
+                "validity": 2,
+                "nonobviousness": 4,
+                "generic": False,
+                "reason": "the analogy is forced (low validity)",
+            }
+        # buckets 3,4 -> surface
+        return {
+            "validity": 4,
+            "nonobviousness": 3,
+            "generic": False,
+            "reason": "plausible non-obvious link grounded in both notes",
         }
 
 

@@ -7,6 +7,8 @@ that is what the eval harness does against real local/API models.
 
 from __future__ import annotations
 
+import collections
+import json
 import pathlib
 
 from kg_engine import Engine, Note, Settings
@@ -72,6 +74,33 @@ def test_fake_extraction_emits_varied_facet_types() -> None:
     assert [f["type"] for f in again] == types
     # primary facet stays at/above the salience floor so it always survives retrieval
     assert facets[0]["salience"] >= Settings().salience_floor
+
+
+def test_fake_surfaced_counts_are_not_uniform() -> None:
+    # Data-sanity: the fake verifier returns a deterministic MIX of verdicts, so the per-note
+    # surfaced connection counts must vary across the golden corpus (not the old "every card
+    # shows the same number"). Also asserts no statement leaks the word "fake".
+    golden = pathlib.Path(__file__).resolve().parents[1] / "data" / "golden" / "notes.json"
+    data = json.loads(golden.read_text())
+    notes = [
+        Note(id=n["id"], title=n["title"], text=n["text"], domain=n.get("domain", ""))
+        for n in data["notes"]
+    ]
+    eng = _engine()
+    eng.ingest(notes)
+    conns = eng.find_connections()
+
+    per_note: collections.Counter[str] = collections.Counter()
+    for c in conns:
+        if c.surfaced:
+            per_note[c.a_id] += 1
+            per_note[c.b_id] += 1
+    counts = {n.id: per_note[n.id] for n in notes}
+    assert len(set(counts.values())) > 1, f"surfaced counts should vary, got {counts}"
+    # the verifier actually suppresses some pairs (not all reasoned pairs surface)
+    assert any(not c.surfaced for c in conns), "expected some pairs held below the q-gate"
+    # no fake-provider artifact reaches a user-facing statement
+    assert all("fake" not in c.statement.lower() for c in conns)
 
 
 def test_eval_harness_runs() -> None:
