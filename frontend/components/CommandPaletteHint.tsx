@@ -9,7 +9,7 @@ export default function CommandPaletteHint() {
       type="button"
       aria-label="Open command palette"
       onClick={() => window.dispatchEvent(new Event("kg:open-command-palette"))}
-      className="text-meta text-text-tertiary transition-colors duration-[120ms] ease-confirm hover:text-text-secondary"
+      className="hidden shrink-0 text-meta text-text-secondary transition-colors duration-[120ms] ease-confirm hover:text-text-primary sm:inline"
     >
       ⌘K
     </button>

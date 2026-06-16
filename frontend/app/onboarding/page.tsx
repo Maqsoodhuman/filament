@@ -18,7 +18,7 @@ type ConnectionOut = components["schemas"]["ConnectionOut"];
 // /connections and picks the top-q row. Other sources are honest placeholders
 // with a "connect" affordance (real OAuth is out of v0 scope).
 
-type Phase = "idle" | "scanning" | "done";
+type Phase = "idle" | "scanning" | "done" | "error";
 
 // Calm, staged working states (§5: "the AI's working state is calm prose,
 // never telemetry"). One line at a time, no progress-bar dashboard.
@@ -38,24 +38,6 @@ const SOURCES: { key: string; label: string; wired: boolean }[] = [
   { key: "notion", label: "Notion", wired: false },
   { key: "upload", label: "Upload files", wired: false },
 ];
-
-// Offline fallback insight (engine unreachable / static build) — the seeded
-// top-q connection, so the activation moment still renders. Typed against the
-// contract; never hand-written shapes.
-const FALLBACK_INSIGHT: ConnectionOut = {
-  id: "c_cb_qs",
-  a_id: "cb",
-  b_id: "qs",
-  a_title: "Central bank credibility",
-  b_title: "Bacterial quorum sensing",
-  facet_type: "threshold-triggered collective commitment",
-  kind: "same mechanism",
-  statement:
-    "Both systems stay dormant until a believed threshold is crossed, then commit collectively — the trigger is the shared expectation, not the underlying resource.",
-  validity: 4,
-  nonobviousness: 4,
-  q: 4,
-};
 
 function topByQ(conns: ConnectionOut[]): ConnectionOut | null {
   if (conns.length === 0) return null;
@@ -79,28 +61,30 @@ export default function OnboardingPage() {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ full: true }),
-    }).catch(() => null);
+    });
 
     for (let i = 1; i < STAGES.length; i++) {
       await new Promise((r) => setTimeout(r, STAGE_MS));
       setStage(i);
     }
-    await scanPromise;
-    await new Promise((r) => setTimeout(r, STAGE_MS));
 
     // Pull the surfaced connections and surface the single highest-q one.
-    let top: ConnectionOut | null = null;
+    // We NEVER fabricate a connection: a real fetch failure becomes an error
+    // state, and a genuinely empty result becomes an honest empty state
+    // (product invariant — a forced insight destroys trust).
     try {
+      const scanRes = await scanPromise;
+      if (!scanRes.ok) throw new Error(`scan failed (${scanRes.status})`);
+      await new Promise((r) => setTimeout(r, STAGE_MS));
+
       const res = await fetch("/api/connections", { cache: "no-store" });
-      if (res.ok) {
-        const conns = (await res.json()) as ConnectionOut[];
-        top = topByQ(conns);
-      }
+      if (!res.ok) throw new Error(`connections fetch failed (${res.status})`);
+      const conns = (await res.json()) as ConnectionOut[];
+      setInsight(topByQ(conns)); // may be null → honest empty state
+      setPhase("done");
     } catch {
-      // fall through to fallback
+      setPhase("error");
     }
-    setInsight(top ?? FALLBACK_INSIGHT);
-    setPhase("done");
   }
 
   return (
@@ -117,13 +101,13 @@ export default function OnboardingPage() {
           <h2 className="text-meta uppercase tracking-wide text-text-tertiary">
             Import from
           </h2>
-          <div className="mt-3 grid grid-cols-2 gap-3">
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
             {SOURCES.map((s) => (
               <button
                 key={s.key}
                 type="button"
                 disabled={phase === "scanning"}
-                className="flex items-center justify-between rounded-md border border-hairline border-border-hairline bg-surface px-4 py-3 text-left text-ui text-text-primary transition-colors duration-[120ms] ease-confirm hover:bg-surface-hover disabled:opacity-50"
+                className="flex min-h-[44px] items-center justify-between rounded-md border border-hairline border-border-hairline bg-surface px-4 py-3 text-left text-ui text-text-primary transition-colors duration-[120ms] ease-confirm hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <span>{s.label}</span>
                 <span className="text-meta text-text-tertiary">Connect</span>
@@ -138,7 +122,7 @@ export default function OnboardingPage() {
             type="button"
             onClick={scanLibrary}
             disabled={phase === "scanning"}
-            className="inline-flex items-center rounded-sm bg-text-primary px-4 py-[10px] text-ui text-surface transition-opacity duration-[120ms] ease-confirm hover:opacity-90 disabled:opacity-60"
+            className="inline-flex min-h-[44px] items-center rounded-sm bg-text-primary px-4 py-[10px] text-ui text-surface transition-opacity duration-[120ms] ease-confirm hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {phase === "scanning" ? "Scanning…" : "Scan my library"}
           </button>
@@ -162,10 +146,10 @@ export default function OnboardingPage() {
         {phase === "done" && insight ? (
           <div className="mt-12">
             <FirstInsightCallout connection={insight} />
-            <div className="mt-6 flex items-center gap-4">
+            <div className="mt-6 flex flex-wrap items-center gap-4">
               <Link
                 href="/"
-                className="inline-flex items-center rounded-sm border border-hairline border-border-hairline bg-surface px-4 py-[8px] text-ui text-text-primary transition-colors duration-[120ms] ease-confirm hover:bg-surface-hover"
+                className="inline-flex min-h-[44px] items-center rounded-sm border border-hairline border-border-hairline bg-surface px-4 py-[8px] text-ui text-text-primary transition-colors duration-[120ms] ease-confirm hover:bg-surface-hover"
               >
                 Go to your timeline
               </Link>
@@ -177,6 +161,59 @@ export default function OnboardingPage() {
                 Scan again
               </button>
             </div>
+          </div>
+        ) : null}
+
+        {/* Honest empty state — scan ran, nothing cleared the q≥3 bar. We never
+            invent a connection (product invariant). */}
+        {phase === "done" && !insight ? (
+          <div className="mt-12 flex flex-col items-center text-center" role="status">
+            <p className="text-body text-text-primary">
+              No non-obvious connections yet.
+            </p>
+            <p className="mt-1 max-w-[420px] text-meta text-text-secondary">
+              Nothing crossed the bar this time. Import more of your library, or
+              scan again as it grows.
+            </p>
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-4">
+              <Link
+                href="/"
+                className="inline-flex min-h-[44px] items-center rounded-sm border border-hairline border-border-hairline bg-surface px-4 py-[8px] text-ui text-text-primary transition-colors duration-[120ms] ease-confirm hover:bg-surface-hover"
+              >
+                Go to your timeline
+              </Link>
+              <button
+                type="button"
+                onClick={scanLibrary}
+                className="text-meta text-text-secondary hover:text-text-primary"
+              >
+                Scan again
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {/* Distinct error state — the scan itself couldn't run. */}
+        {phase === "error" ? (
+          <div
+            className="mt-12 flex flex-col items-center text-center"
+            role="alert"
+            aria-live="polite"
+          >
+            <p className="text-body text-text-primary">
+              We couldn&apos;t reach the connection engine.
+            </p>
+            <p className="mt-1 max-w-[420px] text-meta text-text-secondary">
+              The scan didn&apos;t complete. Check that the engine is running,
+              then try again.
+            </p>
+            <button
+              type="button"
+              onClick={scanLibrary}
+              className="mt-6 inline-flex min-h-[44px] items-center rounded-sm border border-hairline border-border-hairline bg-surface px-4 py-[8px] text-ui text-text-primary transition-colors duration-[120ms] ease-confirm hover:bg-surface-hover"
+            >
+              Try again
+            </button>
           </div>
         ) : null}
       </main>

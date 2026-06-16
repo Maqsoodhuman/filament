@@ -19,12 +19,17 @@ export default function TopNav({
 }) {
   return (
     <header className="border-b border-hairline border-border-hairline bg-surface">
-      <div className="mx-auto flex h-[56px] max-w-[920px] items-center justify-between px-6">
-        <div className="flex items-center gap-8">
-          <Link href="/" className="text-h2 text-text-primary">
-            Knowledge graph
+      <div className="mx-auto flex h-[56px] max-w-[920px] items-center justify-between gap-2 px-3 sm:gap-3 sm:px-6">
+        <div className="flex min-w-0 items-center gap-3 sm:gap-8">
+          <Link
+            href="/"
+            className="min-w-0 shrink truncate text-h2 text-text-primary"
+          >
+            {/* Full mark on sm+, compact mark below sm so the tabs never collide. */}
+            <span className="hidden sm:inline">Knowledge graph</span>
+            <span className="sm:hidden">KG</span>
           </Link>
-          <nav className="flex items-center gap-6">
+          <nav className="flex shrink-0 items-center gap-3 sm:gap-6">
             {TABS.map((tab) => {
               const isActive = tab.label === active;
               return (
@@ -32,7 +37,7 @@ export default function TopNav({
                   key={tab.label}
                   href={tab.href}
                   className={
-                    "text-ui transition-colors duration-[120ms] ease-confirm " +
+                    "whitespace-nowrap text-ui transition-colors duration-[120ms] ease-confirm " +
                     (isActive
                       ? "font-medium text-text-primary [border-bottom:1.5px_solid_var(--text-primary)] pb-[2px]"
                       : "text-text-secondary hover:text-text-primary")

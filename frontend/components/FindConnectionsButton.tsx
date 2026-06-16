@@ -38,12 +38,14 @@ export default function FindConnectionsButton({ noteId }: { noteId: string }) {
         type="button"
         onClick={onClick}
         disabled={pending}
-        className="inline-flex items-center rounded-sm bg-text-primary px-3 py-[6px] text-ui text-surface transition-opacity duration-[120ms] ease-confirm hover:opacity-90 disabled:opacity-50"
+        className="inline-flex min-h-[44px] items-center rounded-sm bg-text-primary px-3 py-[6px] text-ui text-surface transition-opacity duration-[120ms] ease-confirm hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {pending ? "Finding connections…" : "Find connections"}
       </button>
       {error ? (
-        <span className="text-meta text-text-secondary">{error}</span>
+        <span role="alert" aria-live="polite" className="text-meta text-text-secondary">
+          {error}
+        </span>
       ) : null}
     </div>
   );
