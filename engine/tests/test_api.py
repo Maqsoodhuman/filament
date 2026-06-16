@@ -14,7 +14,7 @@ import pathlib
 import pytest
 from fastapi.testclient import TestClient
 
-from kg_api.main import _created, _jobs, _notes, app
+from kg_api.main import _created, _jobs, _notes, _tags, app
 from kg_api.schemas import (
     ConnectionOut,
     JobOut,
@@ -28,6 +28,7 @@ def client() -> TestClient:
     # Isolate module-level dev state between tests (the dev handlers use globals).
     _notes.clear()
     _created.clear()
+    _tags.clear()
     _jobs.clear()
     import kg_api.main as main
 
@@ -36,8 +37,14 @@ def client() -> TestClient:
         yield c
 
 
-def _create(client: TestClient, *, title: str, body: str, source: str = "authored") -> dict:
-    resp = client.post("/notes", json={"title": title, "body": body, "source": source})
+def _create(
+    client: TestClient, *, title: str, body: str, source: str = "authored",
+    tags: list[str] | None = None,
+) -> dict:
+    payload = {"title": title, "body": body, "source": source}
+    if tags is not None:
+        payload["tags"] = tags
+    resp = client.post("/notes", json=payload)
     assert resp.status_code == 201, resp.text
     return resp.json()
 
@@ -62,6 +69,30 @@ def test_create_note_returns_noteout(client: TestClient) -> None:
     assert note.body == "threshold density colony switches cascade"
     assert note.source == "authored"
     assert note.created_at
+
+
+def test_note_tags_roundtrip(client: TestClient) -> None:
+    # POST with tags -> they persist and come back on the NoteOut, in GET /notes and GET /notes/{id}.
+    created = _create(
+        client,
+        title="Cournot",
+        body="threshold density colony switches cascade",
+        tags=["economics", "game-theory"],
+    )
+    note = NoteOut(**created)
+    assert note.tags == ["economics", "game-theory"]
+
+    detail = NoteDetail(**client.get(f"/notes/{created['id']}").json())
+    assert detail.note.tags == ["economics", "game-theory"]
+
+    listed = {n["id"]: NoteOut(**n) for n in client.get("/notes").json()}
+    assert listed[created["id"]].tags == ["economics", "game-theory"]
+
+
+def test_note_tags_default_empty(client: TestClient) -> None:
+    # No tags supplied -> NoteOut.tags defaults to [] (the contract default).
+    created = _create(client, title="A", body="threshold density colony switches cascade")
+    assert NoteOut(**created).tags == []
 
 
 def test_create_note_rejects_empty_body(client: TestClient) -> None:
@@ -188,6 +219,7 @@ def test_seed_populates_notes_on_startup(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setenv("KG_SEED", "1")
     _notes.clear()
     _created.clear()
+    _tags.clear()
     _jobs.clear()
     import kg_api.main as main
 
@@ -196,12 +228,18 @@ def test_seed_populates_notes_on_startup(monkeypatch: pytest.MonkeyPatch) -> Non
         (pathlib.Path(main.__file__).resolve().parents[2] / "data" / "golden" / "notes.json").read_text()
     )
     expected_ids = {n["id"] for n in golden["notes"]}
+    domain_by_id = {n["id"]: n.get("domain", "") for n in golden["notes"]}
     with TestClient(app) as c:
         listed = c.get("/notes").json()
         ids = {n["id"] for n in listed}
         assert expected_ids <= ids
+        # Seeded golden notes derive a single tag from their domain (sensible, non-empty default).
+        for n in listed:
+            if n["id"] in domain_by_id and domain_by_id[n["id"]]:
+                assert n["tags"] == [domain_by_id[n["id"]]]
     # clean up so other tests start empty
     _notes.clear()
     _created.clear()
+    _tags.clear()
     _jobs.clear()
     main._engine = None

@@ -33,10 +33,13 @@ def _now() -> str:
 
 @dataclass
 class StoredNote:
-    """A persisted note plus its creation timestamp (the API's note record)."""
+    """A persisted note plus its creation timestamp (the API's note record).
+
+    `tags` are API-layer hashtags (later feed the Organize map); the engine never sees them."""
 
     note: Note
     created_at: str
+    tags: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -61,7 +64,7 @@ class StoredConnection:
 class NotesRepo(Protocol):
     """Persistence boundary for the API. Read methods never invoke the engine."""
 
-    def add_note(self, note: Note) -> StoredNote: ...
+    def add_note(self, note: Note, tags: list[str] | None = None) -> StoredNote: ...
     def get_note(self, note_id: str) -> StoredNote | None: ...
     def list_notes(self) -> list[StoredNote]: ...
     def all_notes(self) -> list[Note]: ...
@@ -77,8 +80,8 @@ class InMemoryNotesRepo:
     _notes: dict[str, StoredNote] = field(default_factory=dict)
     _conns: dict[tuple[str, str, str], StoredConnection] = field(default_factory=dict)
 
-    def add_note(self, note: Note) -> StoredNote:
-        sn = StoredNote(note=note, created_at=_now())
+    def add_note(self, note: Note, tags: list[str] | None = None) -> StoredNote:
+        sn = StoredNote(note=note, created_at=_now(), tags=list(tags or []))
         self._notes[note.id] = sn
         return sn
 
@@ -128,25 +131,27 @@ class PgNotesRepo:
 
         self._conn = psycopg.connect(_normalize_pg_url(self.conninfo), autocommit=True)
 
-    def add_note(self, note: Note) -> StoredNote:
+    def add_note(self, note: Note, tags: list[str] | None = None) -> StoredNote:
+        tag_list = list(tags or [])
         with self._conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO api_notes (id, title, body, source)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO api_notes (id, title, body, source, tags)
+                VALUES (%s, %s, %s, %s, %s)
                 ON CONFLICT (id) DO UPDATE
-                    SET title = EXCLUDED.title, body = EXCLUDED.body, source = EXCLUDED.source
+                    SET title = EXCLUDED.title, body = EXCLUDED.body,
+                        source = EXCLUDED.source, tags = EXCLUDED.tags
                 RETURNING created_at
                 """,
-                (note.id, note.title, note.text, note.domain or "authored"),
+                (note.id, note.title, note.text, note.domain or "authored", tag_list),
             )
             created_at = cur.fetchone()[0]
-        return StoredNote(note=note, created_at=created_at.isoformat())
+        return StoredNote(note=note, created_at=created_at.isoformat(), tags=tag_list)
 
     def get_note(self, note_id: str) -> StoredNote | None:
         with self._conn.cursor() as cur:
             cur.execute(
-                "SELECT id, title, body, source, created_at FROM api_notes WHERE id = %s",
+                "SELECT id, title, body, source, created_at, tags FROM api_notes WHERE id = %s",
                 (note_id,),
             )
             row = cur.fetchone()
@@ -155,7 +160,7 @@ class PgNotesRepo:
     def list_notes(self) -> list[StoredNote]:
         with self._conn.cursor() as cur:
             cur.execute(
-                "SELECT id, title, body, source, created_at FROM api_notes "
+                "SELECT id, title, body, source, created_at, tags FROM api_notes "
                 "ORDER BY created_at DESC, id"
             )
             rows = cur.fetchall()
@@ -209,7 +214,8 @@ class PgNotesRepo:
 
 def _row_to_stored_note(row) -> StoredNote:
     note = Note(id=row[0], title=row[1] or "", text=row[2], domain=row[3] or "")
-    return StoredNote(note=note, created_at=row[4].isoformat())
+    tags = list(row[5]) if len(row) > 5 and row[5] is not None else []
+    return StoredNote(note=note, created_at=row[4].isoformat(), tags=tags)
 
 
 def make_notes_repo(settings) -> NotesRepo:

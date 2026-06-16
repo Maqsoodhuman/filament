@@ -55,6 +55,8 @@ def _seed_from_golden() -> None:
         )
         _notes[note.id] = note
         _created[note.id] = _now()
+        # Golden notes carry no tags; derive one from the domain so seeded data is real, not empty.
+        _tags[note.id] = [note.domain] if note.domain else []
         notes.append(note)
     if notes:
         _eng().ingest(notes)
@@ -74,6 +76,7 @@ app = FastAPI(title="Knowledge Graph API", version="0.1.0", lifespan=lifespan)
 # instead — notes + surfaced connections persist via kg_api.repo.PgNotesRepo and survive restart.
 _notes: dict[str, Note] = {}
 _created: dict[str, str] = {}
+_tags: dict[str, list[str]] = {}  # note_id -> hashtags (API-layer metadata; not engine input)
 _jobs: dict[str, JobOut] = {}
 _engine: Engine | None = None
 
@@ -145,6 +148,7 @@ def _note_out(n: Note) -> NoteOut:
     return NoteOut(
         id=n.id, title=n.title, body=n.text, source=n.domain or "authored",
         created_at=_created.get(n.id, _now()), connection_count=count,
+        tags=_tags.get(n.id, []),
     )
 
 
@@ -158,19 +162,20 @@ def create_note(payload: NoteCreate) -> NoteOut:
     nid = "n_" + uuid.uuid4().hex[:10]
     note = Note(id=nid, title=payload.title, text=payload.body, domain=payload.source)
     if _pg_mode():
-        return _pg_create_note(note)
+        return _pg_create_note(note, payload.tags)
     _notes[nid] = note
     _created[nid] = _now()
+    _tags[nid] = payload.tags  # API-layer metadata; the engine never sees tags
     _eng().ingest([note])  # dev: ingest inline. PROD: enqueue.
     return _note_out(note)
 
 
-def _pg_create_note(note: Note) -> NoteOut:
+def _pg_create_note(note: Note, tags: list[str]) -> NoteOut:
     """Persist the note, run the engine over the full persisted corpus, persist surfaced
     connections. The engine runs HERE on the write path (no Redis/Dramatiq this round); reads stay
     LLM-free. When the async queue lands, this body moves into a worker and the handler enqueues."""
     repo = _repo()
-    stored = repo.add_note(note)
+    stored = repo.add_note(note, tags)
     eng = _pg_engine()  # hydrated with all persisted notes (incl. this one)
     repo.upsert_connections(eng.surfaced())
     return _pg_note_out(repo, stored)
@@ -182,6 +187,7 @@ def _pg_note_out(repo, stored) -> NoteOut:
     return NoteOut(
         id=n.id, title=n.title, body=n.text, source=n.domain or "authored",
         created_at=stored.created_at, connection_count=count,
+        tags=stored.tags,
     )
 
 
