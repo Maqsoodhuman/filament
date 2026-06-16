@@ -16,7 +16,7 @@ import { usePathname } from "next/navigation";
 type Section = "Timeline" | "Organize" | "Graph" | null;
 
 const NAV = [
-  { label: "Timeline", href: "/", match: (p: string) => p === "/" || p.startsWith("/notes") },
+  { label: "Timeline", href: "/timeline", match: (p: string) => p.startsWith("/timeline") || p.startsWith("/notes") },
   { label: "Organize", href: "/organize", match: (p: string) => p.startsWith("/organize") },
   { label: "Graph", href: "/graph", match: (p: string) => p.startsWith("/graph") },
 ] as const;
@@ -124,12 +124,12 @@ function NavIcon({ label }: { label: string }) {
 function SidebarBody({ pathname, onNavigate }: { pathname: string; onNavigate?: () => void }) {
   return (
     <div className="flex h-full flex-col px-3 py-4">
-      {/* Logo */}
+      {/* Logo — links to the app home (Timeline); the marketing site lives at /. */}
       <Link
-        href="/"
+        href="/timeline"
         onClick={onNavigate}
         className="flex items-center gap-2 px-2 py-1"
-        aria-label="Knowledge graph — home"
+        aria-label="Knowledge graph — timeline"
       >
         <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-accent-ai text-[13px] font-medium text-white">
           K

@@ -99,7 +99,7 @@ export default function CommandPalette() {
         id: "timeline",
         label: "Go to Timeline",
         shortcut: "g t",
-        run: () => go("/"),
+        run: () => go("/timeline"),
       },
       {
         id: "organize",
