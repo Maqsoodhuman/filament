@@ -68,7 +68,7 @@ export default async function GraphPage() {
   return (
     <div className="min-h-screen bg-surface-sunken">
       <TopNav active="Graph" />
-      <main className="mx-auto max-w-[1100px] px-6 py-8">
+      <main className="mx-auto max-w-screen-2xl px-6 py-8">
         <h1 className="text-h1 text-text-primary">Graph</h1>
         <p className="mt-1 text-meta text-text-secondary">
           The local neighborhood around a note.

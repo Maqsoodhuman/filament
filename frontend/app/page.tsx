@@ -31,7 +31,7 @@ export default async function TimelinePage() {
   return (
     <div className="min-h-screen bg-surface-sunken">
       <TopNav active="Timeline" />
-      <main className="mx-auto max-w-[920px] px-6 py-12">
+      <main className="mx-auto max-w-6xl px-6 py-12">
         <h1 className="text-h1 text-text-primary">Timeline</h1>
         <p className="mt-1 text-meta text-text-secondary">
           Your library, newest first.

@@ -51,7 +51,7 @@ export default async function NoteDetailPage({
   return (
     <div className="min-h-screen bg-surface-sunken">
       <TopNav active="Timeline" />
-      <main className="mx-auto grid max-w-[1040px] grid-cols-1 gap-8 px-6 py-12 lg:grid-cols-[1fr_300px]">
+      <main className="mx-auto grid max-w-6xl grid-cols-1 gap-8 px-6 py-12 lg:grid-cols-[1fr_300px]">
         {/* The note */}
         <article>
           <h1 className="text-display text-text-primary">{note.title}</h1>

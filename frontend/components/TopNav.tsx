@@ -19,7 +19,7 @@ export default function TopNav({
 }) {
   return (
     <header className="border-b border-hairline border-border-hairline bg-surface">
-      <div className="mx-auto flex h-[56px] max-w-[920px] items-center justify-between gap-2 px-3 sm:gap-3 sm:px-6">
+      <div className="flex h-[56px] w-full items-center justify-between gap-2 px-4 sm:gap-3 sm:px-8">
         <div className="flex min-w-0 items-center gap-3 sm:gap-8">
           <Link
             href="/"

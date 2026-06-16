@@ -38,7 +38,7 @@ export default async function OrganizePage() {
   return (
     <div className="min-h-screen bg-surface-sunken">
       <TopNav active="Organize" />
-      <main className="mx-auto max-w-[1100px] px-6 py-8">
+      <main className="mx-auto max-w-screen-2xl px-6 py-8">
         <h1 className="text-h1 text-text-primary">Organize</h1>
         <p className="mt-1 text-meta text-text-secondary">
           Auto-clustered sections over your library.

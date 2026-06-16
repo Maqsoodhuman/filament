@@ -315,7 +315,7 @@ export default function OrganizeView({
       </div>
 
       {/* DESKTOP (>= md): three panes. */}
-      <div className="hidden min-h-[560px] grid-cols-[220px_260px_1fr] md:grid">
+      <div className="hidden min-h-[560px] grid-cols-[280px_320px_1fr] md:grid">
         <div className="border-r border-hairline border-border-hairline">
           <div className="px-4 py-3 text-meta uppercase tracking-wide text-text-secondary">
             Sections
@@ -324,7 +324,10 @@ export default function OrganizeView({
         </div>
 
         <div className="border-r border-hairline border-border-hairline">
-          <div className="truncate px-4 pt-3 text-meta uppercase tracking-wide text-text-secondary">
+          <div
+            className="break-words px-4 pt-3 text-meta uppercase tracking-wide text-text-secondary"
+            title={section ? section.label : undefined}
+          >
             {section ? section.label : "Section"}
           </div>
           {/* Only "Pages" is wired today. Table/Board are deferred, so we don't
