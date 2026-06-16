@@ -84,7 +84,7 @@ export default function NoteEditor() {
   }
 
   return (
-    <div className="mx-auto max-w-measure px-6 py-12">
+    <div className="mx-auto max-w-[720px] px-4 py-8 sm:px-8">
       <input
         type="text"
         value={title}
@@ -104,12 +104,12 @@ export default function NoteEditor() {
         />
       </div>
 
-      <div className="mt-10 flex flex-col gap-3 border-t border-border-hairline pt-6 sm:flex-row sm:items-center">
+      <div className="mt-10 flex flex-col gap-3 border-t border-border pt-6 sm:flex-row sm:items-center">
         <button
           type="button"
           onClick={handleSave}
           disabled={!canSave}
-          className="inline-flex min-h-[44px] items-center justify-center rounded-sm bg-text-primary px-4 py-2 text-ui text-surface transition-opacity duration-[120ms] ease-confirm hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex min-h-[44px] items-center justify-center rounded-sm bg-btn-solid-bg px-4 py-2 text-ui text-btn-solid-text transition-opacity duration-[120ms] ease-confirm hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {saving ? "Saving…" : "Save"}
         </button>

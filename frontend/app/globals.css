@@ -2,27 +2,78 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Design tokens — docs/DESIGN_SYSTEM.md §2. Light is default. */
+/* Design tokens — docs/DESIGN_SYSTEM.md §2.2 (v2 warm app-shell palette,
+   AUTHORITATIVE). Light is default; a coherent warm-charcoal dark follows.
+   The v1 token NAMES (--surface, --surface-sunken, --surface-hover,
+   --border-hairline, --text-*, --accent-*) are retained as the public API the
+   components consume — only their VALUES are warmed — plus the new v2 tokens
+   (--bg-*, --border-sidebar, --btn-*, --tag-*). */
 :root {
-  --surface: #ffffff;
-  --surface-sunken: #fafaf9;
-  --surface-hover: #f4f4f5;
-  --border-hairline: #e7e5e4;
-  --text-primary: #1c1917;
-  --text-secondary: #78716c;
-  /* Darkened from #a8a29e (~2.4:1) to ~4.6:1 on --surface / --surface-sunken
-     so informational text (counts, captions, labels) passes WCAG 1.4.3 AA. */
-  --text-tertiary: #6b6660;
+  /* v2 warm surfaces */
+  --bg-app: #fbfaf8;       /* workspace background */
+  --bg-sidebar: #f4f1eb;   /* sidebar warm cream */
+  --bg-card: #ffffff;      /* cards / surfaces */
+  --bg-active: #e7e1d6;    /* active nav pill, selected row */
+  --border: #ece7de;       /* card / dividers (warm hairline) */
+  --border-sidebar: #e7e2d9;
+
+  /* v1 names → warm values (kept so existing classes keep working) */
+  --surface: var(--bg-card);
+  --surface-sunken: var(--bg-app);
+  --surface-hover: var(--bg-active);
+  --border-hairline: var(--border);
+
+  --text-primary: #2a2723;   /* warm near-black */
+  --text-secondary: #7c766b; /* ≥4.5:1 on all bgs */
+  --text-tertiary: #a89f90;  /* placeholder only — never informational text */
+
   /* Reserved blue — AI / connection only. */
   --accent-ai: #2563eb;
   --accent-ai-tint: #eff4ff;
   --accent-ai-border: #bfd4fe;
-  --radius-sm: 6px;
+
+  /* Primary button + neutral tag pill */
+  --btn-solid-bg: #2a2723;
+  --btn-solid-text: #fbfaf7;
+  --tag-bg: #f4f1eb;
+  --tag-text: #8a8275;
+
+  /* Radius — v2.3: cards 12, buttons/inputs 8, pills full */
+  --radius-sm: 8px;
+  --radius-card: 12px;
+}
+
+/* Warm-charcoal dark — coherent, not an invert. */
+.dark {
+  --bg-app: #1b1a17;
+  --bg-sidebar: #211f1b;
+  --bg-card: #252320;
+  --bg-active: #322f2a;
+  --border: #322f2a;
+  --border-sidebar: #322f2a;
+
+  --surface: var(--bg-card);
+  --surface-sunken: var(--bg-app);
+  --surface-hover: var(--bg-active);
+  --border-hairline: var(--border);
+
+  --text-primary: #edeae3;
+  --text-secondary: #a89f90;
+  --text-tertiary: #6b6660;
+
+  --accent-ai: #5b8def;
+  --accent-ai-tint: #1b2436;
+  --accent-ai-border: #2e456e;
+
+  --btn-solid-bg: #edeae3;
+  --btn-solid-text: #1b1a17;
+  --tag-bg: #322f2a;
+  --tag-text: #a89f90;
 }
 
 html,
 body {
-  background: var(--surface-sunken);
+  background: var(--bg-app);
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
 }

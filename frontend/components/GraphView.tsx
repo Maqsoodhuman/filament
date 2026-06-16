@@ -192,7 +192,7 @@ export default function GraphView({
         <>
           {/* MOBILE (< md): vertical list — a scaled-down radial SVG is illegible. */}
           <ul
-            className="flex flex-col gap-3 bg-surface px-4 py-4 md:hidden"
+            className="flex flex-col gap-3 bg-bg-app px-4 py-4 md:hidden"
             aria-hidden="false"
           >
             <li className="rounded-md border border-hairline border-border-hairline bg-surface-hover px-3 py-2 text-h2 text-text-primary">
@@ -220,8 +220,8 @@ export default function GraphView({
             ))}
           </ul>
 
-          {/* DESKTOP (>= md): the deterministic radial SVG. */}
-          <div className="hidden bg-surface px-4 py-4 md:block">
+          {/* DESKTOP (>= md): the deterministic radial SVG on a warm canvas. */}
+          <div className="hidden bg-bg-app px-4 py-4 md:block">
             <svg
               viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
               width="100%"

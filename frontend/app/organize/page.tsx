@@ -1,4 +1,4 @@
-import TopNav from "@/components/TopNav";
+import AppShell from "@/components/AppShell";
 import OrganizeView from "@/components/OrganizeView";
 import { clusterFixtures, allNotesFixture } from "@/lib/fixtures";
 import type { components } from "@/lib/api-types";
@@ -36,17 +36,15 @@ export default async function OrganizePage() {
   }
 
   return (
-    <div className="min-h-screen bg-surface-sunken">
-      <TopNav active="Organize" />
-      <main className="mx-auto max-w-screen-2xl px-6 py-8">
-        <h1 className="text-h1 text-text-primary">Organize</h1>
-        <p className="mt-1 text-meta text-text-secondary">
+    <AppShell title="Organize">
+      <div className="px-4 py-6 sm:px-8">
+        <p className="text-meta text-text-secondary">
           Auto-clustered sections over your library.
         </p>
-        <div className="mt-6 overflow-hidden rounded-md border border-hairline border-border-hairline bg-surface">
+        <div className="mt-5 overflow-hidden rounded-card border border-border bg-bg-card">
           <OrganizeView clusters={clusters} notes={notes} />
         </div>
-      </main>
-    </div>
+      </div>
+    </AppShell>
   );
 }

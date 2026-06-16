@@ -98,7 +98,7 @@ export default function OnboardingPage() {
 
         {/* Import sources */}
         <div className="mt-10">
-          <h2 className="text-meta uppercase tracking-wide text-text-tertiary">
+          <h2 className="text-meta uppercase tracking-wide text-text-secondary">
             Import from
           </h2>
           <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -107,7 +107,7 @@ export default function OnboardingPage() {
                 key={s.key}
                 type="button"
                 disabled={phase === "scanning"}
-                className="flex min-h-[44px] items-center justify-between rounded-md border border-hairline border-border-hairline bg-surface px-4 py-3 text-left text-ui text-text-primary transition-colors duration-[120ms] ease-confirm hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex min-h-[44px] items-center justify-between rounded-card border border-border bg-bg-card px-4 py-3 text-left text-ui text-text-primary transition-colors duration-[120ms] ease-confirm hover:border-text-tertiary/40 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <span>{s.label}</span>
                 <span className="text-meta text-text-tertiary">Connect</span>
@@ -122,7 +122,7 @@ export default function OnboardingPage() {
             type="button"
             onClick={scanLibrary}
             disabled={phase === "scanning"}
-            className="inline-flex min-h-[44px] items-center rounded-sm bg-text-primary px-4 py-[10px] text-ui text-surface transition-opacity duration-[120ms] ease-confirm hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex min-h-[44px] items-center rounded-sm bg-btn-solid-bg px-4 py-[10px] text-ui text-btn-solid-text transition-opacity duration-[120ms] ease-confirm hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {phase === "scanning" ? "Scanning…" : "Scan my library"}
           </button>
@@ -149,7 +149,7 @@ export default function OnboardingPage() {
             <div className="mt-6 flex flex-wrap items-center gap-4">
               <Link
                 href="/"
-                className="inline-flex min-h-[44px] items-center rounded-sm border border-hairline border-border-hairline bg-surface px-4 py-[8px] text-ui text-text-primary transition-colors duration-[120ms] ease-confirm hover:bg-surface-hover"
+                className="inline-flex min-h-[44px] items-center rounded-sm border border-border bg-bg-card px-4 py-[8px] text-ui text-text-primary transition-colors duration-[120ms] ease-confirm hover:bg-bg-active"
               >
                 Go to your timeline
               </Link>
@@ -178,7 +178,7 @@ export default function OnboardingPage() {
             <div className="mt-6 flex flex-wrap items-center justify-center gap-4">
               <Link
                 href="/"
-                className="inline-flex min-h-[44px] items-center rounded-sm border border-hairline border-border-hairline bg-surface px-4 py-[8px] text-ui text-text-primary transition-colors duration-[120ms] ease-confirm hover:bg-surface-hover"
+                className="inline-flex min-h-[44px] items-center rounded-sm border border-border bg-bg-card px-4 py-[8px] text-ui text-text-primary transition-colors duration-[120ms] ease-confirm hover:bg-bg-active"
               >
                 Go to your timeline
               </Link>

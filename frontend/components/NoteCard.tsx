@@ -23,7 +23,7 @@ export default function NoteCard({ note }: { note: NoteOut }) {
   return (
     <Link
       href={`/notes/${note.id}`}
-      className="block rounded-md border-hairline border border-border-hairline bg-surface p-4 transition-colors duration-[120ms] ease-confirm hover:bg-surface-hover"
+      className="block rounded-card border border-border bg-bg-card p-4 transition-colors duration-[120ms] ease-confirm hover:border-text-tertiary/40"
     >
       <div className="flex items-start justify-between gap-4">
         <h2 className="text-h2 text-text-primary">{note.title}</h2>
@@ -34,8 +34,13 @@ export default function NoteCard({ note }: { note: NoteOut }) {
       <p className="mt-2 line-clamp-2 text-ui text-text-secondary">
         {note.body}
       </p>
-      <div className="mt-3 text-meta text-text-secondary">
-        {formatDate(note.created_at)}
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-meta text-text-secondary">
+        {note.source ? (
+          <span className="inline-flex items-center rounded-pill bg-tag-bg px-2 py-[2px] text-tag-text">
+            {note.source}
+          </span>
+        ) : null}
+        <span>{formatDate(note.created_at)}</span>
       </div>
     </Link>
   );

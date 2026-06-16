@@ -120,7 +120,7 @@ export default function ConnectedNoteCard({
   statement: string;
 }) {
   return (
-    <article className="rounded-md border border-hairline border-border-hairline bg-surface p-3">
+    <article className="rounded-card border border-border bg-bg-card p-3">
       <div className="flex items-start justify-between gap-3">
         <h3 className="text-h2 text-text-primary">{partnerTitle}</h3>
       </div>

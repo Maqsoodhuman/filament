@@ -1,5 +1,5 @@
 import Link from "next/link";
-import TopNav from "@/components/TopNav";
+import AppShell from "@/components/AppShell";
 import NoteCard from "@/components/NoteCard";
 import { timelineNotes } from "@/lib/fixtures";
 import type { components } from "@/lib/api-types";
@@ -29,11 +29,11 @@ export default async function TimelinePage() {
   );
 
   return (
-    <div className="min-h-screen bg-surface-sunken">
-      <TopNav active="Timeline" />
-      <main className="mx-auto max-w-6xl px-6 py-12">
-        <h1 className="text-h1 text-text-primary">Timeline</h1>
-        <p className="mt-1 text-meta text-text-secondary">
+    <AppShell title="Timeline">
+      {/* Workspace fills the full width; the feed itself keeps a comfortable
+          reading column but is left-aligned (no centered dead margins). */}
+      <div className="px-4 py-8 sm:px-8">
+        <p className="text-meta text-text-secondary">
           Your library, newest first.
         </p>
         {notes.length === 0 ? (
@@ -43,19 +43,19 @@ export default async function TimelinePage() {
             </p>
             <Link
               href="/onboarding"
-              className="mt-4 inline-flex items-center rounded-sm bg-text-primary px-4 py-[10px] text-ui text-surface transition-opacity duration-[120ms] ease-confirm hover:opacity-90"
+              className="mt-4 inline-flex items-center rounded-sm bg-btn-solid-bg px-4 py-[10px] text-ui text-btn-solid-text transition-opacity duration-[120ms] ease-confirm hover:opacity-90"
             >
               Import your library
             </Link>
           </div>
         ) : (
-          <div className="mt-8 flex flex-col gap-3">
+          <div className="mt-6 flex max-w-3xl flex-col gap-3">
             {notes.map((note) => (
               <NoteCard key={note.id} note={note} />
             ))}
           </div>
         )}
-      </main>
-    </div>
+      </div>
+    </AppShell>
   );
 }

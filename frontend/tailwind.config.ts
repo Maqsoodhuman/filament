@@ -11,6 +11,18 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        // v2 warm app-shell tokens (DESIGN_SYSTEM §2.2).
+        "bg-app": "var(--bg-app)",
+        "bg-sidebar": "var(--bg-sidebar)",
+        "bg-card": "var(--bg-card)",
+        "bg-active": "var(--bg-active)",
+        border: "var(--border)",
+        "border-sidebar": "var(--border-sidebar)",
+        "btn-solid-bg": "var(--btn-solid-bg)",
+        "btn-solid-text": "var(--btn-solid-text)",
+        "tag-bg": "var(--tag-bg)",
+        "tag-text": "var(--tag-text)",
+        // v1 names retained (now warmed values) so existing classes keep working.
         surface: "var(--surface)",
         "surface-sunken": "var(--surface-sunken)",
         "surface-hover": "var(--surface-hover)",
@@ -46,9 +58,11 @@ const config: Config = {
         "12": "48px",
         "16": "64px",
       },
+      // v2.3 shape: buttons/inputs 8px (sm), cards 12px (md/card), pills full.
       borderRadius: {
-        sm: "6px",
-        md: "8px",
+        sm: "8px",
+        md: "12px",
+        card: "12px",
         pill: "999px",
       },
       borderWidth: {

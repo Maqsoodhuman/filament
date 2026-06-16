@@ -1,4 +1,4 @@
-import TopNav from "@/components/TopNav";
+import AppShell from "@/components/AppShell";
 import FindConnectionsButton from "@/components/FindConnectionsButton";
 import ConnectedNoteCard, {
   KindBadge,
@@ -49,11 +49,12 @@ export default async function NoteDetailPage({
   })).filter((g) => g.items.length > 0);
 
   return (
-    <div className="min-h-screen bg-surface-sunken">
-      <TopNav active="Timeline" />
-      <main className="mx-auto grid max-w-6xl grid-cols-1 gap-8 px-6 py-12 lg:grid-cols-[1fr_300px]">
+    <AppShell title={note.title}>
+      {/* Workspace fills the width; the note body (long prose) uses an internal
+          reading column, the connected-notes rail is fixed-width on the right. */}
+      <div className="grid grid-cols-1 gap-8 px-4 py-8 sm:px-8 lg:grid-cols-[minmax(0,1fr)_320px]">
         {/* The note */}
-        <article>
+        <article className="min-w-0">
           <h1 className="text-display text-text-primary">{note.title}</h1>
           <div className="mt-2 text-meta text-text-secondary">
             {note.source}
@@ -67,7 +68,7 @@ export default async function NoteDetailPage({
         </article>
 
         {/* Connected-notes rail */}
-        <aside className="lg:w-[300px]">
+        <aside className="lg:w-[320px]">
           <div className="flex items-baseline justify-between">
             <h2 className="text-h2 text-text-primary">Connections</h2>
             <span className="text-meta text-text-secondary">
@@ -76,7 +77,7 @@ export default async function NoteDetailPage({
           </div>
 
           {grouped.length === 0 ? (
-            <div className="mt-6 rounded-md border border-hairline border-border-hairline bg-surface p-6 text-center">
+            <div className="mt-6 rounded-card border border-border bg-bg-card p-6 text-center">
               <p className="text-ui text-text-secondary">
                 No connections found yet
               </p>
@@ -109,7 +110,7 @@ export default async function NoteDetailPage({
             </div>
           )}
         </aside>
-      </main>
-    </div>
+      </div>
+    </AppShell>
   );
 }

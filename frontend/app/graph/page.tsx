@@ -1,4 +1,4 @@
-import TopNav from "@/components/TopNav";
+import AppShell from "@/components/AppShell";
 import GraphView from "@/components/GraphView";
 import {
   allNotesFixture,
@@ -66,17 +66,15 @@ export default async function GraphPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-surface-sunken">
-      <TopNav active="Graph" />
-      <main className="mx-auto max-w-screen-2xl px-6 py-8">
-        <h1 className="text-h1 text-text-primary">Graph</h1>
-        <p className="mt-1 text-meta text-text-secondary">
+    <AppShell title="Graph">
+      <div className="px-4 py-6 sm:px-8">
+        <p className="text-meta text-text-secondary">
           The local neighborhood around a note.
         </p>
-        <div className="mt-6 overflow-hidden rounded-md border border-hairline border-border-hairline bg-surface">
+        <div className="mt-5 overflow-hidden rounded-card border border-border bg-bg-card">
           <GraphView notes={ordered} connections={connections} />
         </div>
-      </main>
-    </div>
+      </div>
+    </AppShell>
   );
 }
