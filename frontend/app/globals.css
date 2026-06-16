@@ -1376,7 +1376,9 @@ summary:focus-visible,
 .editor {
   max-width: 720px;
   margin: 0 auto;
-  padding: 0 28px 160px;
+  /* wider left gutter so the block handle (+ / duplicate / delete) sits beside
+     the text instead of overlapping it */
+  padding: 0 56px 160px;
 }
 .editor-emoji {
   font-size: 54px;
@@ -1471,15 +1473,32 @@ summary:focus-visible,
 .tag-chip button:hover {
   opacity: 1;
 }
+/* Twitter-style hashtag compose: a # prefix + indigo text as you type */
+.tag-compose {
+  display: inline-flex;
+  align-items: center;
+  flex: 1;
+  min-width: 160px;
+}
+.tag-hash {
+  color: var(--indigo);
+  font-weight: 600;
+  font-size: 12.5px;
+}
 .tag-add {
   font-size: 12.5px;
+  font-weight: 500;
   border: none;
   outline: none;
   background: none;
-  color: var(--text-soft);
+  color: var(--indigo);
   flex: 1;
-  min-width: 160px;
+  min-width: 100px;
   padding: 4px 2px;
+}
+.tag-add::placeholder {
+  color: var(--text-faint);
+  font-weight: 400;
 }
 /* the tags row already has its own bottom border — no cramped focus box */
 .tag-add:focus-visible {
@@ -1499,7 +1518,7 @@ summary:focus-visible,
   display: flex;
   gap: 1px;
   position: absolute;
-  left: -46px;
+  left: -54px;
   top: 3px;
   transition: 0.12s;
 }
@@ -1507,7 +1526,7 @@ summary:focus-visible,
   opacity: 1;
 }
 .bh-btn {
-  width: 20px;
+  width: 16px;
   height: 22px;
   border-radius: 5px;
   display: grid;

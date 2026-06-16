@@ -363,11 +363,16 @@ export default function NoteEditor({
     if (node) updateBlock((node as HTMLElement).dataset.blockId!, { text: (node as HTMLElement).innerHTML });
   };
 
+  // Twitter-style: a "#" prefix shows as you type; Enter / space / comma commit
+  const commitTag = () => {
+    const t = tagInput.trim().toLowerCase().replace(/^#+/, "");
+    if (t && !note.tags.includes(t)) onChange({ ...note, tags: [...note.tags, t] });
+    setTagInput("");
+  };
   const addTag = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && tagInput.trim()) {
-      const t = tagInput.trim().toLowerCase().replace(/^#/, "");
-      if (!note.tags.includes(t)) onChange({ ...note, tags: [...note.tags, t] });
-      setTagInput("");
+    if ((e.key === "Enter" || e.key === " " || e.key === ",") && tagInput.trim()) {
+      e.preventDefault();
+      commitTag();
     } else if (e.key === "Backspace" && !tagInput && note.tags.length) {
       onChange({ ...note, tags: note.tags.slice(0, -1) });
     }
@@ -445,13 +450,16 @@ export default function NoteEditor({
               </button>
             </span>
           ))}
-          <input
-            className="tag-add"
-            placeholder="Add tag…"
-            value={tagInput}
-            onChange={(e) => setTagInput(e.target.value)}
-            onKeyDown={addTag}
-          />
+          <span className="tag-compose">
+            {tagInput && <span className="tag-hash">#</span>}
+            <input
+              className="tag-add"
+              placeholder="Add tag…"
+              value={tagInput}
+              onChange={(e) => setTagInput(e.target.value.replace(/^#+/, ""))}
+              onKeyDown={addTag}
+            />
+          </span>
         </div>
 
         {note.blocks.map((b) => (
