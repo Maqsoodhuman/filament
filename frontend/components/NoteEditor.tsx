@@ -20,11 +20,33 @@ export default function NoteEditor() {
   const [title, setTitle] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Track whether the editor has any text, so Save is guarded against an
+  // empty submit (a note with neither title nor body is meaningless).
+  const [hasBody, setHasBody] = useState(false);
 
   const editor = useCreateBlockNote();
 
+  // Cheap content check: any block with non-whitespace inline text.
+  function editorHasText(): boolean {
+    try {
+      return editor.document.some((block) => {
+        const content = (block as { content?: unknown }).content;
+        if (!Array.isArray(content)) return false;
+        return content.some(
+          (n) =>
+            typeof (n as { text?: unknown }).text === "string" &&
+            ((n as { text: string }).text.trim().length > 0),
+        );
+      });
+    } catch {
+      return false;
+    }
+  }
+
+  const canSave = (title.trim().length > 0 || hasBody) && !saving;
+
   async function handleSave() {
-    if (saving) return;
+    if (saving || !canSave) return;
     setSaving(true);
     setError(null);
 
@@ -50,12 +72,13 @@ export default function NoteEditor() {
         }),
       });
       if (!res.ok) {
-        throw new Error(`save failed (${res.status})`);
+        throw new Error("save failed");
       }
       const note = (await res.json()) as { id: string };
       router.push(`/notes/${note.id}`);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "save failed");
+    } catch {
+      // Human copy, never a raw status code (error-clarity).
+      setError("We couldn't save this note. Check your connection and try again.");
       setSaving(false);
     }
   }
@@ -71,22 +94,33 @@ export default function NoteEditor() {
         className="w-full bg-transparent text-display text-text-primary placeholder:text-text-tertiary focus:outline-none"
       />
 
-      <div className="mt-6 -mx-2">
-        {/* theme=light keeps the editor on the flat neutral surface (§4.1). */}
-        <BlockNoteView editor={editor} theme="light" />
+      <div className="kg-editor mt-6 -mx-2">
+        {/* theme=light keeps the editor on the flat neutral surface (§4.1).
+            .kg-editor flattens the mantine container chrome (no bordered box). */}
+        <BlockNoteView
+          editor={editor}
+          theme="light"
+          onChange={() => setHasBody(editorHasText())}
+        />
       </div>
 
-      <div className="mt-8 flex items-center gap-3 border-t border-hairline border-border-hairline pt-6">
+      <div className="mt-8 flex flex-col gap-3 border-t border-hairline border-border-hairline pt-6 sm:flex-row sm:items-center">
         <button
           type="button"
           onClick={handleSave}
-          disabled={saving}
-          className="rounded-sm bg-text-primary px-4 py-2 text-ui text-surface transition-opacity duration-[120ms] ease-confirm hover:opacity-90 disabled:opacity-50"
+          disabled={!canSave}
+          className="inline-flex min-h-[44px] items-center justify-center rounded-sm bg-text-primary px-4 py-2 text-ui text-surface transition-opacity duration-[120ms] ease-confirm hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {saving ? "Saving…" : "Save"}
         </button>
         {error && (
-          <span className="text-meta text-text-secondary">{error}</span>
+          <span
+            role="alert"
+            aria-live="polite"
+            className="text-meta text-text-secondary"
+          >
+            {error}
+          </span>
         )}
       </div>
     </div>
