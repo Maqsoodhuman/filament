@@ -133,10 +133,9 @@ export interface paths {
         };
         /**
          * List Clusters
-         * @description Organize tab: connected components of the surfaced-connection graph = thematic sections.
-         *
-         *     DEV baseline (connected components). PROD will cluster topical embeddings (HDBSCAN) with
-         *     multi-section membership; this gives a real, non-empty Organize backing today.
+         * @description Organize tab: cluster topical embeddings into themed sections (k-means over the vectors
+         *     the engine already computes). DEV baseline; PROD swaps in HDBSCAN + Haiku labels + multi-section
+         *     membership. Robust to connection density (unlike a connection-graph component approach).
          */
         get: operations["list_clusters_clusters_get"];
         put?: never;
@@ -231,6 +230,8 @@ export interface components {
              * @default authored
              */
             source: string;
+            /** Tags */
+            tags?: string[];
         };
         /** NoteDetail */
         NoteDetail: {
@@ -255,6 +256,8 @@ export interface components {
              * @default 0
              */
             connection_count: number;
+            /** Tags */
+            tags?: string[];
         };
         /** ScanRequest */
         ScanRequest: {

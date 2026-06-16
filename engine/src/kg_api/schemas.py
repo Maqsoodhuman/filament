@@ -32,6 +32,7 @@ class NoteCreate(BaseModel):
     title: str = ""
     body: str = Field(min_length=1)
     source: str = "authored"
+    tags: list[str] = Field(default_factory=list)  # hashtags; later feed the Organize map
 
 
 class NoteOut(BaseModel):
@@ -41,6 +42,7 @@ class NoteOut(BaseModel):
     source: str
     created_at: str
     connection_count: int = 0
+    tags: list[str] = Field(default_factory=list)
 
 
 class NoteDetail(BaseModel):
