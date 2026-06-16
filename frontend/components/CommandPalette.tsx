@@ -2,42 +2,36 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { components } from "@/lib/api-types";
+import { PenLine, Notebook, Share2, Sparkles, FileText, type LucideIcon } from "lucide-react";
+import { useStore } from "@/lib/store";
 
-type NoteOut = components["schemas"]["NoteOut"];
-
-// ⌘K command palette — design system §3 (CommandPalette) + §5.
-// Single fuzzy entry point: create note, switch tab, jump to a note. Right-
-// aligned mono shortcut hint per row (the palette teaches shortcuts). One of
-// the two layers allowed the subtle shadow (§2 Border). Blue stays reserved —
-// generic actions are neutral; only AI/connection verbs would carry blue (none
-// of the actions here are AI verbs, so the palette is fully neutral).
+// ⌘K command palette — single fuzzy entry point: switch surface, jump to a
+// note, start the import. Styled in Filament's hand (paper popover, soft
+// shadow). Reads notes from the client store, not the network.
 
 type Action = {
   id: string;
   label: string;
   shortcut?: string;
+  icon?: LucideIcon;
   run: () => void;
 };
 
-// Simple subsequence fuzzy match (chars appear in order, case-insensitive).
 function fuzzy(query: string, target: string): boolean {
   if (!query) return true;
   const q = query.toLowerCase();
   const t = target.toLowerCase();
   let i = 0;
-  for (let j = 0; j < t.length && i < q.length; j++) {
-    if (t[j] === q[i]) i++;
-  }
+  for (let j = 0; j < t.length && i < q.length; j++) if (t[j] === q[i]) i++;
   return i === q.length;
 }
 
 export default function CommandPalette() {
   const router = useRouter();
+  const { notes, createNote } = useStore();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
-  const [notes, setNotes] = useState<NoteOut[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const close = useCallback(() => {
@@ -54,7 +48,6 @@ export default function CommandPalette() {
     [close, router],
   );
 
-  // Open on ⌘K / Ctrl+K (and let the existing "⌘K" hint dispatch this event).
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
@@ -75,49 +68,21 @@ export default function CommandPalette() {
     };
   }, []);
 
-  // Fetch the library once, lazily, the first time the palette opens.
   useEffect(() => {
-    if (!open) return;
-    inputRef.current?.focus();
-    if (notes.length > 0) return;
-    let cancelled = false;
-    fetch("/api/notes", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : []))
-      .then((data: NoteOut[]) => {
-        if (!cancelled && Array.isArray(data)) setNotes(data);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [open, notes.length]);
+    if (open) inputRef.current?.focus();
+  }, [open]);
 
   const navActions: Action[] = useMemo(
     () => [
-      { id: "new", label: "New note", shortcut: "c", run: () => go("/new") },
-      {
-        id: "timeline",
-        label: "Go to Timeline",
-        shortcut: "g t",
-        run: () => go("/timeline"),
-      },
-      {
-        id: "organize",
-        label: "Go to Organize",
-        shortcut: "g o",
-        run: () => go("/organize"),
-      },
-      {
-        id: "graph",
-        label: "Go to Graph",
-        shortcut: "g g",
-        run: () => go("/graph"),
-      },
+      { id: "new", label: "New note", shortcut: "c", icon: PenLine, run: () => { const n = createNote(); go(`/notes?id=${n.id}`); } },
+      { id: "notes", label: "Go to Notes", shortcut: "g n", icon: PenLine, run: () => go("/notes") },
+      { id: "organize", label: "Go to Organized", shortcut: "g o", icon: Notebook, run: () => go("/organize") },
+      { id: "graph", label: "Go to Knowledge graph", shortcut: "g g", icon: Share2, run: () => go("/graph") },
+      { id: "import", label: "Import a library", shortcut: "i", icon: Sparkles, run: () => go("/onboarding") },
     ],
-    [go],
+    [go, createNote],
   );
 
-  // Build the visible, filtered, ordered action list.
   const results: Action[] = useMemo(() => {
     const matchedNav = navActions.filter((a) => fuzzy(query, a.label));
     const noteActions: Action[] = notes
@@ -126,12 +91,12 @@ export default function CommandPalette() {
       .map((n) => ({
         id: `note-${n.id}`,
         label: n.title || "Untitled",
-        run: () => go(`/notes/${n.id}`),
+        icon: FileText,
+        run: () => go(`/notes?id=${n.id}`),
       }));
     return [...matchedNav, ...noteActions];
   }, [navActions, notes, query, go]);
 
-  // Keep the active index in range as the result set changes.
   useEffect(() => {
     setActive((a) => (a >= results.length ? 0 : a));
   }, [results.length]);
@@ -153,12 +118,29 @@ export default function CommandPalette() {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/20 pt-[18vh]"
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 100,
+        display: "flex",
+        alignItems: "flex-start",
+        justifyContent: "center",
+        background: "rgba(22,26,43,.28)",
+        paddingTop: "16vh",
+      }}
       onMouseDown={close}
       role="presentation"
     >
       <div
-        className="w-full max-w-[560px] overflow-hidden rounded-md border border-hairline border-border-hairline bg-surface shadow-[0_1px_2px_rgba(0,0,0,.04)]"
+        style={{
+          width: "100%",
+          maxWidth: 560,
+          overflow: "hidden",
+          borderRadius: 16,
+          border: "1px solid var(--line)",
+          background: "var(--paper-2)",
+          boxShadow: "0 30px 60px -20px rgba(22,26,43,.45)",
+        }}
         onMouseDown={(e) => e.stopPropagation()}
         role="dialog"
         aria-label="Command palette"
@@ -174,36 +156,60 @@ export default function CommandPalette() {
           onKeyDown={onListKey}
           placeholder="Search notes or run a command…"
           aria-label="Command palette search"
-          className="w-full border-b border-hairline border-border-hairline bg-transparent px-4 py-3 text-ui text-text-primary placeholder:text-text-tertiary focus:outline-none"
+          style={{
+            width: "100%",
+            border: "none",
+            borderBottom: "1px solid var(--line)",
+            background: "transparent",
+            padding: "15px 18px",
+            fontSize: 15,
+            color: "var(--text)",
+            outline: "none",
+            fontFamily: "var(--f-ui)",
+          }}
         />
-        <ul className="max-h-[320px] overflow-y-auto py-1">
+        <ul style={{ maxHeight: 340, overflowY: "auto", padding: "6px", margin: 0, listStyle: "none" }}>
           {results.length === 0 && (
-            <li className="px-4 py-3 text-meta text-text-tertiary">
-              No matches
-            </li>
+            <li style={{ padding: "12px 14px", fontSize: 13, color: "var(--text-faint)" }}>No matches</li>
           )}
-          {results.map((a, i) => (
-            <li key={a.id}>
-              <button
-                type="button"
-                onMouseEnter={() => setActive(i)}
-                onClick={() => a.run()}
-                className={
-                  "flex w-full items-center justify-between px-4 py-2 text-left text-ui transition-colors duration-[120ms] ease-confirm " +
-                  (i === active
-                    ? "bg-surface-hover text-text-primary"
-                    : "text-text-primary")
-                }
-              >
-                <span>{a.label}</span>
-                {a.shortcut && (
-                  <kbd className="font-mono text-[13px] leading-none text-text-tertiary">
-                    {a.shortcut}
-                  </kbd>
-                )}
-              </button>
-            </li>
-          ))}
+          {results.map((a, i) => {
+            const Ic = a.icon;
+            return (
+              <li key={a.id}>
+                <button
+                  type="button"
+                  onMouseEnter={() => setActive(i)}
+                  onClick={() => a.run()}
+                  style={{
+                    display: "flex",
+                    width: "100%",
+                    alignItems: "center",
+                    gap: 11,
+                    padding: "9px 12px",
+                    borderRadius: 9,
+                    border: "none",
+                    background: i === active ? "var(--line-2)" : "transparent",
+                    color: "var(--text)",
+                    textAlign: "left",
+                    cursor: "pointer",
+                    fontSize: 13.5,
+                  }}
+                >
+                  {Ic && (
+                    <span style={{ color: "var(--text-faint)", display: "grid", placeItems: "center" }}>
+                      <Ic size={15} />
+                    </span>
+                  )}
+                  <span style={{ flex: 1 }}>{a.label}</span>
+                  {a.shortcut && (
+                    <kbd style={{ fontFamily: "var(--f-mono)", fontSize: 11, color: "var(--text-faint)" }}>
+                      {a.shortcut}
+                    </kbd>
+                  )}
+                </button>
+              </li>
+            );
+          })}
         </ul>
       </div>
     </div>

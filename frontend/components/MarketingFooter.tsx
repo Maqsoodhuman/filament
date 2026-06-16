@@ -1,33 +1,67 @@
 import Link from "next/link";
+import BrandMark from "./BrandMark";
 
-// MarketingFooter — quiet closing footer for the public pages. Neutral, hairline
-// top border, on the warm palette. No second accent.
+// Big multi-column marketing footer (Capacities-style), adapted to Filament's
+// surfaces, resources, and open-core editions.
+
+const COLS: { h: string; links: { t: string; href: string }[] }[] = [
+  {
+    h: "Product",
+    links: [
+      { t: "Notes", href: "/notes" },
+      { t: "Organized", href: "/organize" },
+      { t: "Knowledge graph", href: "/graph" },
+      { t: "Import a library", href: "/onboarding" },
+    ],
+  },
+  {
+    h: "Resources",
+    links: [
+      { t: "How it works", href: "/#how-it-works" },
+      { t: "Connection kinds", href: "/#kinds" },
+      { t: "The principle", href: "/#principle" },
+      { t: "Product tour", href: "/product" },
+    ],
+  },
+  {
+    h: "Editions",
+    links: [
+      { t: "Community (free)", href: "/#pricing" },
+      { t: "Premium", href: "/#pricing" },
+      { t: "Self-host", href: "/#pricing" },
+      { t: "Pricing", href: "/#pricing" },
+    ],
+  },
+];
+
 export default function MarketingFooter() {
   return (
-    <footer className="border-t border-border">
-      <div className="mx-auto flex max-w-[1080px] flex-col gap-4 px-5 py-10 sm:flex-row sm:items-center sm:px-8">
-        <div className="flex items-center gap-2">
-          <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-accent-ai text-[11px] font-medium text-white">
-            K
-          </span>
-          <span className="text-meta text-text-secondary">
-            Knowledge graph — a cross-source synthesis instrument.
-          </span>
+    <footer className="mfooter">
+      <div className="mf-inner">
+        <div>
+          <Link href="/" className="brand" aria-label="Filament — home">
+            <BrandMark />
+            <span style={{ fontSize: 16 }}>Filament</span>
+          </Link>
+          <p className="mf-brand-blurb">
+            A cross-source synthesis instrument. It surfaces the genuinely
+            non-obvious, true connections across everything you read.
+          </p>
         </div>
-        <nav className="flex items-center gap-5 sm:ml-auto">
-          <Link
-            href="/product"
-            className="text-meta text-text-secondary transition-colors duration-[120ms] ease-confirm hover:text-text-primary"
-          >
-            Product
-          </Link>
-          <Link
-            href="/timeline"
-            className="text-meta text-text-secondary transition-colors duration-[120ms] ease-confirm hover:text-text-primary"
-          >
-            Open app
-          </Link>
-        </nav>
+        {COLS.map((c) => (
+          <div className="mf-col" key={c.h}>
+            <h5>{c.h}</h5>
+            {c.links.map((l) => (
+              <Link key={l.t} href={l.href}>
+                {l.t}
+              </Link>
+            ))}
+          </div>
+        ))}
+      </div>
+      <div className="mf-bottom">
+        <span>© 2026 Filament</span>
+        <span style={{ marginLeft: "auto" }}>An empty result is an honest result.</span>
       </div>
     </footer>
   );

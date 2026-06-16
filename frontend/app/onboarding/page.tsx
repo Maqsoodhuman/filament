@@ -1,245 +1,140 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
-import type { components } from "@/lib/api-types";
-import FirstInsightCallout from "@/components/FirstInsightCallout";
+import { useRouter } from "next/navigation";
+import { BookOpen, BookMarked, FileText, Upload, ArrowRight } from "lucide-react";
+import BrandMark from "@/components/BrandMark";
+import ThreadCard from "@/components/ThreadCard";
+import { useStore, topThreads } from "@/lib/store";
 
-type ConnectionOut = components["schemas"]["ConnectionOut"];
+// Onboarding / import → first-insight (docs/COHESIVE_DESIGN.md §3 Onboarding) —
+// in Filament's aesthetic: a warm centred card, import sources, a calm progress
+// beat, then the first intersection lights up (an amber ThreadCard) before the
+// import "finishes." Honest-empty preserved: if nothing genuine surfaces, we say
+// so. No app chrome.
 
-// Onboarding / import → first-insight — design system §5 + the activation
-// principle. A calm, near-empty screen that (a) offers import sources, (b) shows
-// a quiet staged progress beat (notes → facets → connections), then (c) surfaces
-// the single highest-q connection in the reserved-blue callout: "we found a
-// connection you didn't ask for." No confetti; blue lives only on the insight.
-//
-// The "Scan my library" path is wired: it POSTs the engine's on-demand /scan
-// (via the same-origin BFF proxy), animates the staged progress, then GETs
-// /connections and picks the top-q row. Other sources are honest placeholders
-// with a "connect" affordance (real OAuth is out of v0 scope).
+type Phase = "idle" | "scanning" | "done" | "empty";
 
-type Phase = "idle" | "scanning" | "done" | "error";
-
-// Calm, staged working states (§5: "the AI's working state is calm prose,
-// never telemetry"). One line at a time, no progress-bar dashboard.
 const STAGES = [
-  "Reading your notes…",
-  "Extracting structural facets…",
-  "Looking for connections across your library…",
+  "Reading your library…",
+  "Extracting the structure beneath each note…",
+  "Looking for threads across distant ideas…",
 ] as const;
 
-const STAGE_MS = 900;
-
-// Import sources. Only "Scan my library" is wired in v0; the rest carry a
-// "connect" affordance so the activation path is honest about what's live.
-const SOURCES: { key: string; label: string; wired: boolean }[] = [
-  { key: "readwise", label: "Readwise", wired: false },
-  { key: "kindle", label: "Kindle", wired: false },
-  { key: "notion", label: "Notion", wired: false },
-  { key: "upload", label: "Upload files", wired: false },
+const SOURCES = [
+  { key: "readwise", label: "Readwise", desc: "Highlights & articles", icon: BookOpen, color: "#E0A33B" },
+  { key: "kindle", label: "Kindle", desc: "Book highlights", icon: BookMarked, color: "#1FA89A" },
+  { key: "notion", label: "Notion", desc: "Pages & databases", icon: FileText, color: "#7C6CF0" },
+  { key: "upload", label: "Upload files", desc: ".md / .txt", icon: Upload, color: "#E8705B" },
 ];
 
-function topByQ(conns: ConnectionOut[]): ConnectionOut | null {
-  if (conns.length === 0) return null;
-  return conns.reduce((best, c) => (c.q > best.q ? c : best), conns[0]);
-}
-
 export default function OnboardingPage() {
+  const router = useRouter();
+  const { connections, noteById } = useStore();
   const [phase, setPhase] = useState<Phase>("idle");
   const [stage, setStage] = useState(0);
-  const [insight, setInsight] = useState<ConnectionOut | null>(null);
 
-  async function scanLibrary() {
+  async function runImport() {
     setPhase("scanning");
     setStage(0);
-    setInsight(null);
-
-    // Fire the real on-demand scan in parallel with the staged animation, so the
-    // progress beat is honest about ordering (notes → facets → connections)
-    // without blocking on the network.
-    const scanPromise = fetch("/api/scan", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ full: true }),
-    });
-
+    // The calm progress beat. Task #7's API wiring fires POST /scan here and
+    // polls the job; the staged prose mirrors the real pipeline order.
     for (let i = 1; i < STAGES.length; i++) {
-      await new Promise((r) => setTimeout(r, STAGE_MS));
+      await new Promise((r) => setTimeout(r, 850));
       setStage(i);
     }
-
-    // Pull the surfaced connections and surface the single highest-q one.
-    // We NEVER fabricate a connection: a real fetch failure becomes an error
-    // state, and a genuinely empty result becomes an honest empty state
-    // (product invariant — a forced insight destroys trust).
-    try {
-      const scanRes = await scanPromise;
-      if (!scanRes.ok) throw new Error(`scan failed (${scanRes.status})`);
-      await new Promise((r) => setTimeout(r, STAGE_MS));
-
-      const res = await fetch("/api/connections", { cache: "no-store" });
-      if (!res.ok) throw new Error(`connections fetch failed (${res.status})`);
-      const conns = (await res.json()) as ConnectionOut[];
-      setInsight(topByQ(conns)); // may be null → honest empty state
-      setPhase("done");
-    } catch {
-      setPhase("error");
-    }
+    await new Promise((r) => setTimeout(r, 850));
+    // We NEVER fabricate a thread: an empty top-list becomes an honest empty.
+    setPhase(topThreads(connections, 1).length > 0 ? "done" : "empty");
   }
 
+  const first = topThreads(connections, 1)[0];
+
   return (
-    <div className="min-h-screen bg-surface-sunken">
-      <main className="mx-auto flex max-w-measure flex-col px-6 py-16">
-        <h1 className="text-display text-text-primary">Bring in your library</h1>
-        <p className="mt-2 text-body text-text-secondary">
-          Import what you already read. We&apos;ll quietly look for connections
-          across it — the kind topic search can&apos;t find.
-        </p>
-
-        {/* Import sources */}
-        <div className="mt-10">
-          <h2 className="text-meta uppercase tracking-wide text-text-secondary">
-            Import from
-          </h2>
-          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {SOURCES.map((s) => (
-              <button
-                key={s.key}
-                type="button"
-                disabled={phase === "scanning"}
-                className="flex min-h-[44px] items-center justify-between rounded-card border border-border bg-bg-card px-4 py-3 text-left text-ui text-text-primary transition-colors duration-[120ms] ease-confirm hover:border-text-tertiary/40 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <span>{s.label}</span>
-                <span className="text-meta text-text-tertiary">Connect</span>
-              </button>
-            ))}
-          </div>
+    <div className="onboard-wrap">
+      <div className="onboard-card">
+        <div className="brand" style={{ marginBottom: 18 }}>
+          <BrandMark />
+          <span style={{ fontSize: 16 }}>Filament</span>
         </div>
 
-        {/* Primary path — the wired on-demand scan */}
-        <div className="mt-8">
-          <button
-            type="button"
-            onClick={scanLibrary}
-            disabled={phase === "scanning"}
-            className="inline-flex min-h-[44px] items-center rounded-sm bg-btn-solid-bg px-4 py-[10px] text-ui text-btn-solid-text transition-opacity duration-[120ms] ease-confirm hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {phase === "scanning" ? "Scanning…" : "Scan my library"}
-          </button>
-          <p className="mt-2 text-meta text-text-tertiary">
-            Uses your existing notes. Nothing leaves your machine on the
-            community edition.
-          </p>
-        </div>
-
-        {/* Calm staged working state — one line of prose, no telemetry */}
-        {phase === "scanning" ? (
-          <div className="mt-12 flex flex-col items-center text-center">
-            <WorkingGlyph />
-            <p className="mt-4 text-body text-text-secondary">
-              {STAGES[stage]}
+        {phase === "idle" || phase === "scanning" ? (
+          <>
+            <h1>Bring in your library</h1>
+            <p className="lede">
+              Import what you already read. The engine quietly looks for the
+              non-obvious threads across it — the kind topic search can&apos;t find.
             </p>
-          </div>
-        ) : null}
 
-        {/* First-insight callout — the single highest-q connection, in blue */}
-        {phase === "done" && insight ? (
-          <div className="mt-12">
-            <FirstInsightCallout connection={insight} />
-            <div className="mt-6 flex flex-wrap items-center gap-4">
-              <Link
-                href="/timeline"
-                className="inline-flex min-h-[44px] items-center rounded-sm border border-border bg-bg-card px-4 py-[8px] text-ui text-text-primary transition-colors duration-[120ms] ease-confirm hover:bg-bg-active"
-              >
-                Go to your timeline
-              </Link>
-              <button
-                type="button"
-                onClick={scanLibrary}
-                className="text-meta text-text-secondary hover:text-text-primary"
-              >
-                Scan again
-              </button>
+            <div className="source-grid">
+              {SOURCES.map((s) => {
+                const Ic = s.icon;
+                return (
+                  <button
+                    key={s.key}
+                    className="source-btn"
+                    onClick={runImport}
+                    disabled={phase === "scanning"}
+                  >
+                    <span className="si" style={{ background: s.color }}>
+                      <Ic size={18} />
+                    </span>
+                    <span>
+                      <div className="st">{s.label}</div>
+                      <div className="sd">{s.desc}</div>
+                    </span>
+                  </button>
+                );
+              })}
             </div>
-          </div>
-        ) : null}
 
-        {/* Honest empty state — scan ran, nothing cleared the q≥3 bar. We never
-            invent a connection (product invariant). */}
-        {phase === "done" && !insight ? (
-          <div className="mt-12 flex flex-col items-center text-center" role="status">
-            <p className="text-body text-text-primary">
-              No non-obvious connections yet.
-            </p>
-            <p className="mt-1 max-w-[420px] text-meta text-text-secondary">
-              Nothing crossed the bar this time. Import more of your library, or
-              scan again as it grows.
-            </p>
-            <div className="mt-6 flex flex-wrap items-center justify-center gap-4">
-              <Link
-                href="/timeline"
-                className="inline-flex min-h-[44px] items-center rounded-sm border border-border bg-bg-card px-4 py-[8px] text-ui text-text-primary transition-colors duration-[120ms] ease-confirm hover:bg-bg-active"
-              >
-                Go to your timeline
-              </Link>
-              <button
-                type="button"
-                onClick={scanLibrary}
-                className="text-meta text-text-secondary hover:text-text-primary"
-              >
-                Scan again
+            {phase === "scanning" ? (
+              <div style={{ marginTop: 26 }} role="status" aria-live="polite">
+                <div className="progress-track">
+                  <div className="progress-fill" style={{ width: `${((stage + 1) / STAGES.length) * 100}%` }} />
+                </div>
+                <p style={{ fontFamily: "var(--f-read)", fontSize: 16, color: "var(--text-soft)" }}>
+                  {STAGES[stage]}
+                </p>
+              </div>
+            ) : (
+              <button className="cta" style={{ marginTop: 26 }} onClick={runImport}>
+                Scan my library <ArrowRight size={15} />
               </button>
-            </div>
-          </div>
-        ) : null}
-
-        {/* Distinct error state — the scan itself couldn't run. */}
-        {phase === "error" ? (
-          <div
-            className="mt-12 flex flex-col items-center text-center"
-            role="alert"
-            aria-live="polite"
-          >
-            <p className="text-body text-text-primary">
-              We couldn&apos;t reach the connection engine.
-            </p>
-            <p className="mt-1 max-w-[420px] text-meta text-text-secondary">
-              The scan didn&apos;t complete. Check that the engine is running,
-              then try again.
-            </p>
-            <button
-              type="button"
-              onClick={scanLibrary}
-              className="mt-6 inline-flex min-h-[44px] items-center rounded-sm border border-hairline border-border-hairline bg-surface px-4 py-[8px] text-ui text-text-primary transition-colors duration-[120ms] ease-confirm hover:bg-surface-hover"
-            >
-              Try again
+            )}
+          </>
+        ) : phase === "done" && first ? (
+          <>
+            <h1>We found a thread you didn&apos;t ask for</h1>
+            <p className="lede">Before your import even finished, the engine lit one up.</p>
+            <ThreadCard
+              c={first}
+              aEmoji={noteById(first.a_id)?.emoji}
+              bEmoji={noteById(first.b_id)?.emoji}
+              kicker="Your first intersection"
+            />
+            <button className="cta" style={{ marginTop: 24 }} onClick={() => router.push(`/notes?id=${first.a_id}`)}>
+              Open your library <ArrowRight size={15} />
             </button>
-          </div>
-        ) : null}
-      </main>
+          </>
+        ) : (
+          <>
+            <h1>No threads yet — and that&apos;s honest</h1>
+            <p className="lede">
+              Nothing crossed the bar this time. An empty result is an honest result.
+              Import more of your library, or scan again as it grows.
+            </p>
+            <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
+              <button className="cta" onClick={() => router.push("/notes")}>
+                Open your library <ArrowRight size={15} />
+              </button>
+              <button className="cta ghost" onClick={runImport}>
+                Scan again
+              </button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
-  );
-}
-
-// A single calm outline glyph for the working state (§5: "one centered Tabler
-// icon"). Neutral, never blue — blue is reserved for the surfaced connection.
-function WorkingGlyph() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="28"
-      height="28"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="text-text-tertiary"
-      aria-hidden="true"
-    >
-      <path d="M10 6h-4a2 2 0 0 0 -2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-4" />
-      <path d="M14 4h6v6" />
-      <path d="M14 10l6 -6" />
-    </svg>
   );
 }

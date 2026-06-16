@@ -1,451 +1,333 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import Link from "next/link";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { components } from "@/lib/api-types";
-import { KIND_META, KIND_ORDER, KindBadge } from "@/components/ConnectedNoteCard";
+import * as d3 from "d3";
+import { Share2, Circle, PenLine, Eye } from "lucide-react";
+import {
+  useStore,
+  KIND_META,
+  topThreads,
+  clusterColorOf,
+  type Connection,
+  type Note,
+  type Cluster,
+} from "@/lib/store";
+import ConnectionCard from "./ConnectionCard";
+import ThreadCard from "./ThreadCard";
 
-type NoteOut = components["schemas"]["NoteOut"];
-type ConnectionOut = components["schemas"]["ConnectionOut"];
-type Kind = ConnectionOut["kind"];
+// Knowledge graph (docs/COHESIVE_DESIGN.md §3): Filament's dark d3 force stage,
+// but the edges are REAL KIND-typed connections — amber `same mechanism`
+// filaments glow brightest, indigo `same dynamic`, faint slate `same topic`;
+// thickness/opacity ∝ q. Right panel has two tabs: Connections (selected node's
+// links) and Insights (the intersections feed). A focus toggle collapses to the
+// selected node's local neighbourhood to avoid the hairball at scale.
 
-// LOCAL neighborhood graph (§4.4 / §6.4): the hub note centered, its directly
-// connected PARTNER notes arranged on a deterministic radial ring (no physics,
-// no sliders). One node per partner note — its multiple KINDs are aggregated
-// onto the node, NOT drawn as duplicate nodes. Edges/labels are typed by KIND
-// (icon + label + weight, never color alone); ONLY `same mechanism` draws blue
-// (§1.1). Below `md` the radial SVG is illegible, so we render a vertical list
-// of connections instead (readable-font-size).
+type GNode = Note & { degree: number; color: string };
+type GLink = { source: string; target: string; kind: Connection["kind"]; q: number; conn: Connection };
 
-const VIEW_W = 960;
-const VIEW_H = 680;
-const CX = VIEW_W / 2;
-const CY = VIEW_H / 2;
-const RADIUS = 248;
-
-function partnerId(c: ConnectionOut, hubId: string): string {
-  return c.a_id === hubId ? c.b_id : c.a_id;
-}
-function partnerTitle(c: ConnectionOut, hubId: string): string {
-  return c.a_id === hubId ? c.b_title : c.a_title;
-}
-
-// Truncate a label so node text stays inside its pill. Desktop has horizontal
-// room, so the partner-node title clip is generous (28); the hub pill clip is
-// passed explicitly at the call site.
-function clip(s: string, n = 28): string {
-  return s.length > n ? s.slice(0, n - 1) + "…" : s;
-}
-
-// The strongest (most structural) KIND among a partner's edges decides the
-// node/edge emphasis. KIND_ORDER puts `same mechanism` first.
-function strongestKind(kinds: Kind[]): Kind {
-  for (const k of KIND_ORDER) if (kinds.includes(k)) return k;
-  return kinds[0];
-}
-
-type Partner = {
-  id: string;
-  title: string;
-  kinds: Kind[];
-  primary: Kind;
-  // representative connection per kind, for the "why"/statement
-  statements: { kind: Kind; statement: string }[];
-};
-
-export default function GraphView({
-  notes,
-  connections,
-}: {
-  notes: NoteOut[];
-  connections: ConnectionOut[];
-}) {
-  const router = useRouter();
-  const [hubId, setHubId] = useState<string>(notes[0]?.id ?? "");
-
-  const notesById = useMemo(() => {
-    const m = new Map<string, NoteOut>();
-    for (const n of notes) m.set(n.id, n);
-    return m;
-  }, [notes]);
-
-  const hub = notesById.get(hubId) ?? notes[0] ?? null;
-
-  // Edges incident to the hub, aggregated into ONE partner per note (dedupe).
-  const partners: Partner[] = useMemo(() => {
-    const byPartner = new Map<string, Partner>();
-    for (const c of connections) {
-      if (c.a_id !== hubId && c.b_id !== hubId) continue;
-      const pid = partnerId(c, hubId);
-      const existing = byPartner.get(pid);
-      if (existing) {
-        if (!existing.kinds.includes(c.kind)) existing.kinds.push(c.kind);
-        if (!existing.statements.some((s) => s.kind === c.kind))
-          existing.statements.push({ kind: c.kind, statement: c.statement });
-      } else {
-        byPartner.set(pid, {
-          id: pid,
-          title: partnerTitle(c, hubId),
-          kinds: [c.kind],
-          primary: c.kind,
-          statements: [{ kind: c.kind, statement: c.statement }],
-        });
-      }
-    }
-    const list = [...byPartner.values()].map((p) => ({
-      ...p,
-      primary: strongestKind(p.kinds),
-      kinds: [...p.kinds].sort(
-        (a, b) => KIND_ORDER.indexOf(a) - KIND_ORDER.indexOf(b),
-      ),
-      statements: [...p.statements].sort(
-        (a, b) => KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind),
-      ),
-    }));
-    // Deterministic: structural partners first, then by id.
-    list.sort((a, b) => {
-      const ka = KIND_ORDER.indexOf(a.primary);
-      const kb = KIND_ORDER.indexOf(b.primary);
-      if (ka !== kb) return ka - kb;
-      return a.id.localeCompare(b.id);
-    });
-    return list;
-  }, [connections, hubId]);
-
-  // Deterministic radial layout: evenly spaced around the ring, starting at top.
-  const placed = partners.map((p, i) => {
-    const angle = -Math.PI / 2 + (2 * Math.PI * i) / Math.max(partners.length, 1);
-    return {
-      p,
-      x: CX + RADIUS * Math.cos(angle),
-      y: CY + RADIUS * Math.sin(angle),
-      angle,
-    };
-  });
-
-  const count = partners.length;
-
-  function goTo(id: string) {
-    router.push(`/notes/${id}`);
+function buildGraph(notes: Note[], connections: Connection[], clusters: Cluster[]) {
+  const degree: Record<string, number> = {};
+  const links: GLink[] = [];
+  for (const c of connections) {
+    if (!notes.find((n) => n.id === c.a_id) || !notes.find((n) => n.id === c.b_id)) continue;
+    degree[c.a_id] = (degree[c.a_id] ?? 0) + 1;
+    degree[c.b_id] = (degree[c.b_id] ?? 0) + 1;
+    links.push({ source: c.a_id, target: c.b_id, kind: c.kind, q: c.q, conn: c });
   }
+  const nodes: GNode[] = notes.map((n) => ({
+    ...n,
+    degree: degree[n.id] ?? 0,
+    color: clusterColorOf(n.id, clusters),
+  }));
+  return { nodes, links };
+}
+
+export default function GraphView() {
+  const router = useRouter();
+  const { notes, connections, clusters, connectionsFor, noteById } = useStore();
+  const svgRef = useRef<SVGSVGElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const d3State = useRef<{ link?: d3.Selection<any, any, any, any>; node?: d3.Selection<any, any, any, any> }>({});
+  const [dim, setDim] = useState({ w: 800, h: 600 });
+  const [selected, setSelected] = useState<string | null>(null);
+  const [tab, setTab] = useState<"insights" | "note">("insights");
+  const [focus, setFocus] = useState(false);
+
+  useLayoutEffect(() => {
+    const measure = () => {
+      if (wrapRef.current) setDim({ w: wrapRef.current.clientWidth, h: wrapRef.current.clientHeight });
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
+
+  const graph = useMemo(() => buildGraph(notes, connections, clusters), [notes, connections, clusters]);
+
+  useEffect(() => {
+    if (!svgRef.current || dim.w < 10) return;
+    const { w, h } = dim;
+    const nodes = graph.nodes.map((d) => ({ ...d })) as (GNode & d3.SimulationNodeDatum)[];
+    const links = graph.links.map((d) => ({ ...d })) as (GLink & d3.SimulationLinkDatum<any>)[];
+    const r = (d: GNode) => 10 + d.degree * 2.6;
+
+    const svg = d3.select(svgRef.current);
+    svg.selectAll("*").remove();
+    svg.attr("viewBox", `0 0 ${w} ${h}`);
+
+    const defs = svg.append("defs");
+    const f = defs.append("filter").attr("id", "glow").attr("x", "-60%").attr("y", "-60%").attr("width", "220%").attr("height", "220%");
+    f.append("feGaussianBlur").attr("stdDeviation", 3.4).attr("result", "b");
+    const m = f.append("feMerge");
+    m.append("feMergeNode").attr("in", "b");
+    m.append("feMergeNode").attr("in", "SourceGraphic");
+
+    const g = svg.append("g");
+    svg.call(
+      d3.zoom<SVGSVGElement, unknown>().scaleExtent([0.4, 3]).on("zoom", (e) => g.attr("transform", e.transform)) as any,
+    );
+
+    const link = g
+      .append("g")
+      .selectAll("line")
+      .data(links)
+      .join("line")
+      .attr("stroke", (d) => KIND_META[d.kind].edge)
+      .attr("stroke-opacity", (d) => 0.25 + d.q * 0.14)
+      .attr("stroke-width", (d) => 0.8 + d.q * 0.7)
+      .attr("stroke-dasharray", (d) => (d.kind === "same topic" ? "2 6" : "3 5"))
+      .attr("filter", (d) => (d.kind === "same mechanism" ? "url(#glow)" : null))
+      .style("animation", (d) => (d.kind === "same mechanism" ? "flow 6s linear infinite" : "none"));
+
+    const node = g
+      .append("g")
+      .selectAll("g")
+      .data(nodes)
+      .join("g")
+      .style("cursor", "pointer")
+      .on("click", (_e, d) => {
+        setSelected(d.id);
+        setTab("note");
+      });
+
+    node
+      .append("circle")
+      .attr("r", r)
+      .attr("fill", (d) => d.color)
+      .attr("filter", "url(#glow)")
+      .attr("stroke", "#0E1019")
+      .attr("stroke-width", 1.5);
+
+    node
+      .append("text")
+      .text((d) => d.emoji)
+      .attr("text-anchor", "middle")
+      .attr("dy", (d) => r(d) * 0.34)
+      .attr("font-size", (d) => r(d) * 0.95)
+      .style("pointer-events", "none");
+
+    node
+      .append("text")
+      .attr("class", "node-label")
+      .text((d) => d.title || "Untitled")
+      .attr("text-anchor", "middle")
+      .attr("dy", (d) => -r(d) - 8);
+
+    const sim = d3
+      .forceSimulation(nodes)
+      .force(
+        "link",
+        d3.forceLink<any, any>(links).id((d: any) => d.id).distance((d: any) => 150 - d.q * 12).strength(0.4),
+      )
+      .force("charge", d3.forceManyBody().strength(-360))
+      .force("center", d3.forceCenter(w / 2, h / 2))
+      .force("collide", d3.forceCollide<any>().radius((d: any) => r(d) + 30))
+      .on("tick", () => {
+        link
+          .attr("x1", (d: any) => d.source.x)
+          .attr("y1", (d: any) => d.source.y)
+          .attr("x2", (d: any) => d.target.x)
+          .attr("y2", (d: any) => d.target.y);
+        node.attr("transform", (d: any) => `translate(${d.x},${d.y})`);
+      });
+
+    const drag = d3
+      .drag<any, any>()
+      .on("start", (e, d) => {
+        if (!e.active) sim.alphaTarget(0.3).restart();
+        d.fx = d.x;
+        d.fy = d.y;
+      })
+      .on("drag", (e, d) => {
+        d.fx = e.x;
+        d.fy = e.y;
+      })
+      .on("end", (e, d) => {
+        if (!e.active) sim.alphaTarget(0);
+        d.fx = null;
+        d.fy = null;
+      });
+    node.call(drag as any);
+
+    d3State.current = { link, node };
+    return () => {
+      sim.stop();
+    };
+  }, [graph, dim]);
+
+  // highlight / focus the selected node's neighbourhood
+  useEffect(() => {
+    const { link, node } = d3State.current;
+    if (!link || !node) return;
+    if (!selected) {
+      node.style("opacity", 1).style("display", null);
+      link.style("opacity", null).style("display", null);
+      return;
+    }
+    const nbr = new Set<string>([selected]);
+    graph.links.forEach((l) => {
+      if (l.source === selected) nbr.add(l.target);
+      if (l.target === selected) nbr.add(l.source);
+    });
+    node
+      .style("display", (d: any) => (focus && !nbr.has(d.id) ? "none" : null))
+      .style("opacity", (d: any) => (nbr.has(d.id) ? 1 : 0.16));
+    link
+      .style("display", (d: any) => {
+        const inc = d.source.id === selected || d.target.id === selected;
+        return focus && !inc ? "none" : null;
+      })
+      .style("opacity", (d: any) => {
+        const inc = d.source.id === selected || d.target.id === selected;
+        return inc ? 1 : 0.06;
+      });
+  }, [selected, focus, graph]);
+
+  const selNote = selected ? notes.find((n) => n.id === selected) : null;
+  const selConns = selected ? connectionsFor(selected).filter((c) => c.q >= 3 || c.kind === "same topic") : [];
+  const threads = useMemo(() => topThreads(connections, 5), [connections]);
+  const orphans = graph.nodes.filter((n) => n.degree === 0);
+  const componentsCount = useMemo(() => countComponents(graph.nodes, graph.links), [graph]);
 
   return (
-    <div className="flex flex-col">
-      {/* Hub selector — "center graph on this note" (§4.4 palette verb). */}
-      <div className="flex flex-wrap items-center gap-3 border-b border-hairline border-border-hairline px-4 py-3">
-        <label className="text-meta text-text-secondary" htmlFor="hub-select">
-          Centered on
-        </label>
-        <select
-          id="hub-select"
-          value={hubId}
-          onChange={(e) => setHubId(e.target.value)}
-          className="min-h-[44px] max-w-full rounded-sm border border-hairline border-border-hairline bg-surface px-2 py-1 text-ui text-text-primary"
-        >
-          {notes.map((n) => (
-            <option key={n.id} value={n.id}>
-              {n.title || "Untitled"}
-            </option>
-          ))}
-        </select>
-        {/* Count is connection signal → blue when non-zero (§1.1), else neutral. */}
-        <span
-          className={
-            "ml-auto rounded-pill px-2 py-[2px] text-meta " +
-            (count > 0
-              ? "bg-accent-ai-tint text-accent-ai"
-              : "text-text-secondary")
-          }
-        >
-          {count} {count === 1 ? "connection" : "connections"}
-        </span>
+    <div className="graph-wrap">
+      <div className="graph-stage" ref={wrapRef}>
+        <svg
+          ref={svgRef}
+          onClick={(e) => {
+            if ((e.target as Element).tagName === "svg") setSelected(null);
+          }}
+        />
+        {selected && (
+          <button className="graph-toggle" onClick={() => setFocus((v) => !v)}>
+            <Eye size={14} />
+            {focus ? "Show whole library" : "Focus neighbourhood"}
+          </button>
+        )}
+        <div className="graph-legend">
+          <span className="lg"><i style={{ background: KIND_META["same mechanism"].edge }} />same mechanism</span>
+          <span className="lg"><i style={{ background: KIND_META["same dynamic"].edge }} />same dynamic</span>
+          <span className="lg"><i style={{ background: KIND_META["same topic"].edge }} />same topic</span>
+        </div>
+        <div className="graph-hint">drag nodes · scroll to zoom · click a note to focus its threads</div>
       </div>
 
-      {/* Screen-reader list of the neighborhood (sr-only) — the SVG is decorative
-          for AT, this is the accessible equivalent (aria-labels / voiceover-sr). */}
-      <ul className="sr-only">
-        <li>
-          Centered on {hub?.title || "Untitled"}, {count}{" "}
-          {count === 1 ? "connection" : "connections"}.
-        </li>
-        {partners.map((p) => (
-          <li key={`sr-${p.id}`}>
-            <a href={`/notes/${p.id}`}>
-              {p.title} — {p.kinds.join(", ")}
-            </a>
-          </li>
-        ))}
-      </ul>
-
-      {count === 0 ? (
-        <div className="flex h-[400px] flex-col items-center justify-center px-4 text-center">
-          <p className="text-ui text-text-secondary">
-            No connections around this note yet
-          </p>
-          <p className="mt-1 max-w-[420px] text-meta text-text-tertiary">
-            Run Find connections to scan the library for non-obvious links to
-            this note.
-          </p>
+      <div className="gpanel">
+        <div className="gp-tabhead">
+          <button className={`gp-tab ${tab === "insights" ? "on" : ""}`} onClick={() => setTab("insights")}>Insights</button>
+          <button className={`gp-tab ${tab === "note" ? "on" : ""}`} onClick={() => setTab("note")}>Selected</button>
         </div>
-      ) : (
-        <>
-          {/* MOBILE (< md): vertical list — a scaled-down radial SVG is illegible. */}
-          <ul
-            className="flex flex-col gap-3 bg-bg-app px-4 py-4 md:hidden"
-            aria-hidden="false"
-          >
-            <li className="rounded-md border border-hairline border-border-hairline bg-surface-hover px-3 py-2 text-h2 text-text-primary">
-              {hub?.title || "Untitled"}
-            </li>
-            {partners.map((p) => (
-              <li key={`m-${p.id}`}>
-                <Link
-                  href={`/notes/${p.id}`}
-                  className="block rounded-md border border-hairline border-border-hairline bg-surface p-3 transition-colors duration-[120ms] ease-confirm hover:bg-surface-hover"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <span className="text-h2 text-text-primary">{p.title}</span>
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {p.kinds.map((k) => (
-                      <KindBadge key={k} kind={k} />
+
+        {tab === "insights" && (
+          <div className="gp-body">
+            <div className="label" style={{ marginBottom: 12 }}>Where your ideas meet</div>
+            {threads.length > 0 ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {threads.map((c) => (
+                  <ThreadCard
+                    key={c.id}
+                    c={c}
+                    aEmoji={noteById(c.a_id)?.emoji}
+                    bEmoji={noteById(c.b_id)?.emoji}
+                    kicker={c.kind === "same mechanism" ? "Structural thread" : "Recurring dynamic"}
+                    onOpen={() => router.push(`/notes?id=${c.a_id}`)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="honest-empty">
+                <p className="he-ti">No intersections yet</p>
+                <p>The engine hasn&apos;t found a genuinely non-obvious thread across your library. An empty feed is honest.</p>
+              </div>
+            )}
+
+            <div className="insight" style={{ marginTop: 16 }}>
+              <div className="ih"><span className="ii" style={{ background: "var(--indigo)" }}><Share2 size={14} /></span>Network shape</div>
+              <div className="big">{componentsCount} {componentsCount === 1 ? "cluster" : "clusters"}</div>
+              <p>{graph.nodes.length} notes joined by {graph.links.length} surfaced connections.</p>
+            </div>
+
+            <div className="insight">
+              <div className="ih"><span className="ii" style={{ background: "var(--c-coral)" }}><Circle size={13} /></span>Loose threads</div>
+              {orphans.length ? (
+                <>
+                  <p style={{ marginTop: 2 }}>No connections surfaced yet:</p>
+                  <div className="tagrow">
+                    {orphans.map((o) => (
+                      <span key={o.id} className="subtle-link" onClick={() => { setSelected(o.id); setTab("note"); }}>
+                        {o.emoji} {o.title || "Untitled"}
+                      </span>
                     ))}
                   </div>
-                  <p className="mt-2 text-meta text-text-secondary">
-                    {p.statements[0]?.statement}
-                  </p>
-                </Link>
-              </li>
-            ))}
-          </ul>
-
-          {/* DESKTOP (>= md): the deterministic radial SVG on a warm canvas. */}
-          <div className="hidden bg-bg-app px-4 py-4 md:block">
-            <svg
-              viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
-              width="100%"
-              className="block"
-              role="img"
-              aria-label={`Local connection neighborhood centered on ${hub?.title || "Untitled"}`}
-            >
-              {/* Edges first (under nodes). The edge stops short of the node
-                  circle so the labels beyond it stay clean. Non-mechanism edges
-                  use a darker neutral (≥3:1, WCAG 1.4.11); mechanism is blue +
-                  thicker. */}
-              {placed.map(({ p, x, y, angle }) => {
-                const blue = KIND_META[p.primary].blue;
-                // Stop the line just outside the hub pill and just short of the
-                // node circle.
-                const ex = CX + (RADIUS - 12) * Math.cos(angle);
-                const ey = CY + (RADIUS - 12) * Math.sin(angle);
-                return (
-                  <line
-                    key={`edge-${p.id}`}
-                    x1={CX + 24 * Math.cos(angle)}
-                    y1={CY + 24 * Math.sin(angle)}
-                    x2={ex}
-                    y2={ey}
-                    stroke={blue ? "var(--accent-ai)" : "var(--text-secondary)"}
-                    strokeWidth={blue ? 2 : 1.25}
-                  />
-                );
-              })}
-
-              {/* Hub node (center) — filled neutral pill, the subject note.
-                  Drawn before the partner labels so an outward label can never be
-                  occluded by it (and the labels are pushed OUTWARD past the ring,
-                  so they never reach the hub regardless of angle). */}
-              <g>
-                <rect
-                  x={CX - 110}
-                  y={CY - 19}
-                  width={220}
-                  height={38}
-                  rx={19}
-                  fill="var(--text-primary)"
-                />
-                <text
-                  x={CX}
-                  y={CY + 4}
-                  textAnchor="middle"
-                  fontSize="13"
-                  fill="var(--surface)"
-                  fontWeight={500}
-                >
-                  {clip(hub?.title ?? "", 28)}
-                </text>
-              </g>
-
-              {/* Partner nodes + labels. The title and KIND pill are anchored
-                  OUTWARD from the ring (beyond the node circle, away from the
-                  hub) and stacked vertically. Because the anchor is always
-                  farther from center than the node, the label can never overlap
-                  the node circle OR the hub — robust at top, bottom and sides
-                  (fixes the "sam◯ynamic" collision). */}
-              {placed.map(({ p, x, y, angle }) => {
-                const blue = KIND_META[p.primary].blue;
-                const cosA = Math.cos(angle);
-                const sinA = Math.sin(angle);
-                // Anchor point pushed outward beyond the node circle.
-                const ax = x + 18 * cosA;
-                const ay = y + 18 * sinA;
-                // Horizontal text anchor by which side of the ring we're on, so
-                // text grows away from the node, never back over it.
-                const anchor =
-                  cosA > 0.25 ? "start" : cosA < -0.25 ? "end" : "middle";
-                // KIND pill geometry, placed under (lower half) or over (upper
-                // half) the title so the two never stack onto the circle.
-                const label = p.primary;
-                const pillW = label.length * 6.2 + 30;
-                const below = sinA >= 0; // bottom half → stack downward
-                const titleY = ay + (below ? 0 : -16);
-                const pillCy = ay + (below ? 22 : -36);
-                // Pill x by anchor side.
-                const pillCx =
-                  anchor === "start"
-                    ? ax + pillW / 2
-                    : anchor === "end"
-                      ? ax - pillW / 2
-                      : ax;
-                return (
-                  <a
-                    key={`node-${p.id}`}
-                    href={`/notes/${p.id}`}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      goTo(p.id);
-                    }}
-                    aria-label={`${p.title}: ${p.kinds.join(", ")}`}
-                    className="kg-graph-node cursor-pointer outline-none"
-                  >
-                    <title>{`${p.title} — ${p.kinds.join(", ")}`}</title>
-                    {/* invisible larger hit target */}
-                    <circle cx={x} cy={y} r={16} fill="transparent" />
-                    <circle
-                      cx={x}
-                      cy={y}
-                      r={7}
-                      fill="var(--surface)"
-                      stroke={blue ? "var(--accent-ai)" : "var(--text-secondary)"}
-                      strokeWidth={2}
-                    />
-                    {/* Note title — outward of the circle. */}
-                    <text
-                      x={ax}
-                      y={titleY + 4}
-                      textAnchor={anchor}
-                      fontSize="13"
-                      fontWeight={500}
-                      fill="var(--text-primary)"
-                    >
-                      {clip(p.title, 26)}
-                    </text>
-                    {/* KIND pill — beside/under the title, never mid-edge. */}
-                    <g>
-                      <rect
-                        x={pillCx - pillW / 2}
-                        y={pillCy - 11}
-                        width={pillW}
-                        height={22}
-                        rx={11}
-                        fill="var(--surface)"
-                        stroke={
-                          blue
-                            ? "var(--accent-ai-border)"
-                            : "var(--border-hairline)"
-                        }
-                        strokeWidth={1}
-                      />
-                      <KindGlyph
-                        kind={p.primary}
-                        x={pillCx - pillW / 2 + 10}
-                        y={pillCy}
-                      />
-                      <text
-                        x={pillCx + 7}
-                        y={pillCy + 4}
-                        textAnchor="middle"
-                        fontSize="11"
-                        fontWeight={p.primary === "same dynamic" ? 500 : 400}
-                        fill={
-                          blue ? "var(--accent-ai)" : "var(--text-secondary)"
-                        }
-                      >
-                        {label}
-                      </text>
-                      {p.kinds.length > 1 ? (
-                        <text
-                          x={pillCx + pillW / 2 + 9}
-                          y={pillCy + 4}
-                          textAnchor="middle"
-                          fontSize="10"
-                          fill="var(--text-secondary)"
-                        >
-                          +{p.kinds.length - 1}
-                        </text>
-                      ) : null}
-                    </g>
-                  </a>
-                );
-              })}
-            </svg>
+                </>
+              ) : (
+                <p>Every note connects to at least one other.</p>
+              )}
+            </div>
           </div>
-        </>
-      )}
+        )}
 
-      {/* Legend — KIND key with icon + weight + label (color is secondary cue,
-          never sole meaning; §10 color-not-only). */}
-      <div className="flex flex-wrap items-center gap-3 border-t border-hairline border-border-hairline px-4 py-3">
-        {KIND_ORDER.map((k) => (
-          <KindBadge key={k} kind={k as Kind} />
-        ))}
+        {tab === "note" &&
+          (selNote ? (
+            <div className="gp-body">
+              <div className="gp-note-emo">{selNote.emoji}</div>
+              <div className="gp-note-ti">{selNote.title || "Untitled"}</div>
+              <div className="label" style={{ margin: "16px 0 10px" }}>
+                Connections ({selConns.length})
+              </div>
+              {selConns.length ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {selConns.map((c) => (
+                    <ConnectionCard key={c.id} c={c} partnerEmoji={noteById(c.b_id)?.emoji} onOpen={() => setSelected(c.b_id)} />
+                  ))}
+                </div>
+              ) : (
+                <div className="honest-empty">
+                  <p className="he-ti">No threads yet</p>
+                  <p>No non-obvious connection surfaced for this note.</p>
+                </div>
+              )}
+              <button className="gp-open" onClick={() => router.push(`/notes?id=${selNote.id}`)}>
+                <PenLine size={15} /> Open in editor
+              </button>
+            </div>
+          ) : (
+            <div className="gp-empty">Click any node in the graph to inspect its connections.</div>
+          ))}
       </div>
     </div>
   );
 }
 
-// Small inline KIND glyph for SVG edge labels (icon, not color alone).
-function KindGlyph({ kind, x, y }: { kind: Kind; x: number; y: number }) {
-  const blue = KIND_META[kind].blue;
-  const stroke = blue ? "var(--accent-ai)" : "var(--text-secondary)";
-  const common = {
-    fill: "none",
-    stroke,
-    strokeWidth: 2,
-    strokeLinecap: "round" as const,
-    strokeLinejoin: "round" as const,
-  };
-  // Render the matching Tabler path, translated to (x-6, y-6) at 12px.
-  let path: React.ReactElement;
-  if (kind === "same mechanism") {
-    path = (
-      <>
-        <path d="M17 3v10" />
-        <path d="M14 6l3 -3l3 3" />
-        <path d="M7 21v-10" />
-        <path d="M4 14l3 -3l3 3" />
-      </>
-    );
-  } else if (kind === "same dynamic") {
-    path = (
-      <path d="M3 12c.667 -4 1.333 -6 4 -6c4 0 4 12 8 12c2.667 0 3.333 -2 4 -6" />
-    );
-  } else {
-    path = (
-      <>
-        <path d="M7.5 7.5m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" />
-        <path d="M3 6v5.172a2 2 0 0 0 .586 1.414l7.71 7.71a2.41 2.41 0 0 0 3.408 0l5.592 -5.592a2.41 2.41 0 0 0 0 -3.408l-7.71 -7.71a2 2 0 0 0 -1.414 -.586h-5.172a3 3 0 0 0 -3 3z" />
-      </>
-    );
-  }
-  return (
-    <g
-      transform={`translate(${x - 6}, ${y - 6}) scale(0.5)`}
-      {...common}
-      aria-hidden="true"
-    >
-      {path}
-    </g>
-  );
+function countComponents(nodes: GNode[], links: GLink[]): number {
+  const parent: Record<string, string> = {};
+  nodes.forEach((n) => (parent[n.id] = n.id));
+  const find = (x: string): string => (parent[x] === x ? x : (parent[x] = find(parent[x])));
+  links.forEach((l) => {
+    const a = find(l.source);
+    const b = find(l.target);
+    if (a !== b) parent[a] = b;
+  });
+  return new Set(nodes.map((n) => find(n.id))).size;
 }
