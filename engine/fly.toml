@@ -1,0 +1,30 @@
+# Fly.io config for the engine API. Deploy: `cd engine && flyctl launch --no-deploy` (first time, to
+# create the app) then `flyctl deploy`. Default env runs the self-contained fake-provider demo.
+app = "kg-engine"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  KG_PROVIDER = "fake"
+  KG_SEED = "1"
+  KG_STORE_BACKEND = "memory"
+  PORT = "8000"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    method = "get"
+    path = "/health"
+    interval = "15s"
+    timeout = "2s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
