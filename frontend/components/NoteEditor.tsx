@@ -104,7 +104,7 @@ export default function NoteEditor() {
         />
       </div>
 
-      <div className="mt-8 flex flex-col gap-3 border-t border-hairline border-border-hairline pt-6 sm:flex-row sm:items-center">
+      <div className="mt-10 flex flex-col gap-3 border-t border-border-hairline pt-6 sm:flex-row sm:items-center">
         <button
           type="button"
           onClick={handleSave}
@@ -113,6 +113,14 @@ export default function NoteEditor() {
         >
           {saving ? "Saving…" : "Save"}
         </button>
+        {/* When Save is disabled (no title and no body), explain why — a disabled
+            control with no reason is a dead affordance (forms-feedback). Hidden
+            once the note can be saved. */}
+        {!canSave && !saving && (
+          <span className="text-meta text-text-secondary">
+            Add a title or some text to save.
+          </span>
+        )}
         {error && (
           <span
             role="alert"
