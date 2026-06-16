@@ -18,11 +18,11 @@ type Kind = ConnectionOut["kind"];
 // (§1.1). Below `md` the radial SVG is illegible, so we render a vertical list
 // of connections instead (readable-font-size).
 
-const VIEW_W = 860;
-const VIEW_H = 600;
+const VIEW_W = 960;
+const VIEW_H = 680;
 const CX = VIEW_W / 2;
 const CY = VIEW_H / 2;
-const RADIUS = 210;
+const RADIUS = 248;
 
 function partnerId(c: ConnectionOut, hubId: string): string {
   return c.a_id === hubId ? c.b_id : c.a_id;
@@ -229,100 +229,85 @@ export default function GraphView({
               role="img"
               aria-label={`Local connection neighborhood centered on ${hub?.title || "Untitled"}`}
             >
-              {/* Edges first (under nodes). Non-mechanism edges use a darker
-                  neutral (≥3:1, WCAG 1.4.11), mechanism is blue + thicker. */}
-              {placed.map(({ p, x, y }) => {
+              {/* Edges first (under nodes). The edge stops short of the node
+                  circle so the labels beyond it stay clean. Non-mechanism edges
+                  use a darker neutral (≥3:1, WCAG 1.4.11); mechanism is blue +
+                  thicker. */}
+              {placed.map(({ p, x, y, angle }) => {
                 const blue = KIND_META[p.primary].blue;
+                // Stop the line just outside the hub pill and just short of the
+                // node circle.
+                const ex = CX + (RADIUS - 12) * Math.cos(angle);
+                const ey = CY + (RADIUS - 12) * Math.sin(angle);
                 return (
                   <line
                     key={`edge-${p.id}`}
-                    x1={CX}
-                    y1={CY}
-                    x2={x}
-                    y2={y}
+                    x1={CX + 24 * Math.cos(angle)}
+                    y1={CY + 24 * Math.sin(angle)}
+                    x2={ex}
+                    y2={ey}
                     stroke={blue ? "var(--accent-ai)" : "var(--text-secondary)"}
                     strokeWidth={blue ? 2 : 1.25}
                   />
                 );
               })}
 
-              {/* KIND labels placed near the PARTNER end (just inside the node),
-                  staggered radially so they clear the centered hub pill and each
-                  other. One label group per node → no per-edge collisions. */}
+              {/* Hub node (center) — filled neutral pill, the subject note.
+                  Drawn before the partner labels so an outward label can never be
+                  occluded by it (and the labels are pushed OUTWARD past the ring,
+                  so they never reach the hub regardless of angle). */}
+              <g>
+                <rect
+                  x={CX - 110}
+                  y={CY - 19}
+                  width={220}
+                  height={38}
+                  rx={19}
+                  fill="var(--text-primary)"
+                />
+                <text
+                  x={CX}
+                  y={CY + 4}
+                  textAnchor="middle"
+                  fontSize="13"
+                  fill="var(--surface)"
+                  fontWeight={500}
+                >
+                  {clip(hub?.title ?? "", 28)}
+                </text>
+              </g>
+
+              {/* Partner nodes + labels. The title and KIND pill are anchored
+                  OUTWARD from the ring (beyond the node circle, away from the
+                  hub) and stacked vertically. Because the anchor is always
+                  farther from center than the node, the label can never overlap
+                  the node circle OR the hub — robust at top, bottom and sides
+                  (fixes the "sam◯ynamic" collision). */}
               {placed.map(({ p, x, y, angle }) => {
                 const blue = KIND_META[p.primary].blue;
+                const cosA = Math.cos(angle);
+                const sinA = Math.sin(angle);
+                // Anchor point pushed outward beyond the node circle.
+                const ax = x + 18 * cosA;
+                const ay = y + 18 * sinA;
+                // Horizontal text anchor by which side of the ring we're on, so
+                // text grows away from the node, never back over it.
+                const anchor =
+                  cosA > 0.25 ? "start" : cosA < -0.25 ? "end" : "middle";
+                // KIND pill geometry, placed under (lower half) or over (upper
+                // half) the title so the two never stack onto the circle.
                 const label = p.primary;
-                const w = label.length * 6.2 + 30;
-                // Pull the label back toward the hub from the node. For
-                // near-horizontal edges (large |cos|) the default 64px pullback
-                // can land the pill atop the 200px hub pill (half-width 100),
-                // so we pull LESS back (push the label outward toward the node)
-                // until its near edge clears the hub pill by ≥8px.
-                const HUB_HALF_W = 100;
-                const GAP = 8;
-                let pullback = 64;
-                const c = Math.abs(Math.cos(angle));
-                if (c > 0.001) {
-                  // distance from CX at which the label center clears the pill
-                  const minCenterDx = HUB_HALF_W + GAP + w / 2;
-                  // |lx - CX| = (RADIUS - pullback) * |cos| must be >= minCenterDx
-                  const maxPullback = RADIUS - minCenterDx / c;
-                  if (maxPullback < pullback) pullback = Math.max(0, maxPullback);
-                }
-                const lx = CX + (RADIUS - pullback) * Math.cos(angle);
-                const ly = CY + (RADIUS - pullback) * Math.sin(angle);
-                return (
-                  <g key={`label-${p.id}`}>
-                    <rect
-                      x={lx - w / 2}
-                      y={ly - 11}
-                      width={w}
-                      height={22}
-                      rx={11}
-                      fill="var(--surface)"
-                      stroke={
-                        blue
-                          ? "var(--accent-ai-border)"
-                          : "var(--border-hairline)"
-                      }
-                      strokeWidth={1}
-                    />
-                    {/* tiny KIND glyph (icon, not color alone) */}
-                    <KindGlyph
-                      kind={p.primary}
-                      x={lx - w / 2 + 10}
-                      y={ly}
-                    />
-                    <text
-                      x={lx + 7}
-                      y={ly + 4}
-                      textAnchor="middle"
-                      fontSize="11"
-                      fontWeight={p.primary === "same dynamic" ? 500 : 400}
-                      fill={blue ? "var(--accent-ai)" : "var(--text-secondary)"}
-                    >
-                      {label}
-                    </text>
-                    {/* If the partner has more than one KIND, show a "+N" cue. */}
-                    {p.kinds.length > 1 ? (
-                      <text
-                        x={lx + w / 2 + 8}
-                        y={ly + 4}
-                        textAnchor="middle"
-                        fontSize="10"
-                        fill="var(--text-secondary)"
-                      >
-                        +{p.kinds.length - 1}
-                      </text>
-                    ) : null}
-                  </g>
-                );
-              })}
-
-              {/* Partner nodes — interactive: click → /notes/{id}, ≥24px hit
-                  area (28px circle), hover/focus ring, accessible name, tooltip. */}
-              {placed.map(({ p, x, y }) => {
-                const blue = KIND_META[p.primary].blue;
+                const pillW = label.length * 6.2 + 30;
+                const below = sinA >= 0; // bottom half → stack downward
+                const titleY = ay + (below ? 0 : -16);
+                const pillCy = ay + (below ? 22 : -36);
+                // Pill x by anchor side.
+                const pillCx =
+                  anchor === "start"
+                    ? ax + pillW / 2
+                    : anchor === "end"
+                      ? ax - pillW / 2
+                      : ax;
                 return (
                   <a
                     key={`node-${p.id}`}
@@ -345,40 +330,65 @@ export default function GraphView({
                       stroke={blue ? "var(--accent-ai)" : "var(--text-secondary)"}
                       strokeWidth={2}
                     />
+                    {/* Note title — outward of the circle. */}
                     <text
-                      x={x}
-                      y={y + (y < CY ? -16 : 24)}
-                      textAnchor="middle"
+                      x={ax}
+                      y={titleY + 4}
+                      textAnchor={anchor}
                       fontSize="13"
+                      fontWeight={500}
                       fill="var(--text-primary)"
                     >
-                      {clip(p.title)}
+                      {clip(p.title, 26)}
                     </text>
+                    {/* KIND pill — beside/under the title, never mid-edge. */}
+                    <g>
+                      <rect
+                        x={pillCx - pillW / 2}
+                        y={pillCy - 11}
+                        width={pillW}
+                        height={22}
+                        rx={11}
+                        fill="var(--surface)"
+                        stroke={
+                          blue
+                            ? "var(--accent-ai-border)"
+                            : "var(--border-hairline)"
+                        }
+                        strokeWidth={1}
+                      />
+                      <KindGlyph
+                        kind={p.primary}
+                        x={pillCx - pillW / 2 + 10}
+                        y={pillCy}
+                      />
+                      <text
+                        x={pillCx + 7}
+                        y={pillCy + 4}
+                        textAnchor="middle"
+                        fontSize="11"
+                        fontWeight={p.primary === "same dynamic" ? 500 : 400}
+                        fill={
+                          blue ? "var(--accent-ai)" : "var(--text-secondary)"
+                        }
+                      >
+                        {label}
+                      </text>
+                      {p.kinds.length > 1 ? (
+                        <text
+                          x={pillCx + pillW / 2 + 9}
+                          y={pillCy + 4}
+                          textAnchor="middle"
+                          fontSize="10"
+                          fill="var(--text-secondary)"
+                        >
+                          +{p.kinds.length - 1}
+                        </text>
+                      ) : null}
+                    </g>
                   </a>
                 );
               })}
-
-              {/* Hub node (center) — filled neutral pill, the subject note. */}
-              <g>
-                <rect
-                  x={CX - 100}
-                  y={CY - 18}
-                  width={200}
-                  height={36}
-                  rx={18}
-                  fill="var(--text-primary)"
-                />
-                <text
-                  x={CX}
-                  y={CY + 4}
-                  textAnchor="middle"
-                  fontSize="13"
-                  fill="var(--surface)"
-                  fontWeight={500}
-                >
-                  {clip(hub?.title ?? "", 26)}
-                </text>
-              </g>
             </svg>
           </div>
         </>

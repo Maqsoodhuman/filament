@@ -1,10 +1,23 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import type { components } from "@/lib/api-types";
+import ConnectedNoteCard, {
+  KindBadge,
+  KIND_ORDER,
+} from "@/components/ConnectedNoteCard";
 
 type ClusterOut = components["schemas"]["ClusterOut"];
 type NoteOut = components["schemas"]["NoteOut"];
+type ConnectionOut = components["schemas"]["ConnectionOut"];
+type Kind = ConnectionOut["kind"];
+
+// Resolve the partner-note title: a connection lists both endpoints (a/b), so
+// pick whichever is NOT the note we're viewing.
+function partnerTitleOf(c: ConnectionOut, noteId: string): string {
+  return c.a_id === noteId ? c.b_title : c.a_title;
+}
 
 // Deterministic neutral section dot. Sections are NOT connections, so they
 // never draw the reserved blue (§1). Color is a quiet identity cue only —
@@ -134,6 +147,48 @@ export default function OrganizeView({
     "sections",
   );
 
+  // Connections for the open page — fetched live from the BFF proxy
+  // (GET /connections?note_id={id}) so the content pane shows that note's
+  // KIND-grouped connections, like the Timeline detail rail. Falls back to the
+  // note's connection_count==0 quietly; an error/empty list shows the empty
+  // state. Re-runs whenever the open page changes.
+  const openId = page?.id ?? null;
+  const [connections, setConnections] = useState<ConnectionOut[]>([]);
+  const [connLoading, setConnLoading] = useState(false);
+
+  useEffect(() => {
+    if (!openId) {
+      setConnections([]);
+      return;
+    }
+    let cancelled = false;
+    setConnLoading(true);
+    fetch(`/api/connections?note_id=${encodeURIComponent(openId)}`, {
+      cache: "no-store",
+    })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data: ConnectionOut[]) => {
+        if (!cancelled) setConnections(Array.isArray(data) ? data : []);
+      })
+      .catch(() => {
+        if (!cancelled) setConnections([]);
+      })
+      .finally(() => {
+        if (!cancelled) setConnLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [openId]);
+
+  // Group the open page's connections by KIND, structural-first.
+  const groupedConnections = openId
+    ? KIND_ORDER.map((kind) => ({
+        kind,
+        items: connections.filter((c) => c.kind === kind),
+      })).filter((g) => g.items.length > 0)
+    : [];
+
   if (loading) {
     return (
       <div className="flex flex-col">
@@ -245,14 +300,93 @@ export default function OrganizeView({
   );
 
   const pageContent = page ? (
-    <article>
-      <h2 className="text-display text-text-primary">
-        {page.title || "Untitled"}
-      </h2>
+    <article className="min-w-0">
+      <div className="flex items-start justify-between gap-4">
+        <h2 className="min-w-0 text-display text-text-primary">
+          {page.title || "Untitled"}
+        </h2>
+        {/* Open full — navigates to the full-screen note detail (§ note detail). */}
+        <Link
+          href={`/notes/${page.id}`}
+          className="inline-flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-sm border border-border bg-bg-card px-3 text-ui text-text-primary transition-colors duration-[120ms] ease-confirm hover:bg-bg-active"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            width="16"
+            height="16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.75"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M14 4h6v6" />
+            <path d="M10 14l10 -10" />
+            <path d="M18 14v5a2 2 0 0 1 -2 2h-11a2 2 0 0 1 -2 -2v-11a2 2 0 0 1 2 -2h5" />
+          </svg>
+          Open full
+        </Link>
+      </div>
       <div className="mt-2 text-meta text-text-secondary">{page.source}</div>
       <div className="mt-6 max-w-measure whitespace-pre-wrap text-body text-text-primary">
         {page.body}
       </div>
+
+      {/* This note's connections — KIND-grouped cards, like the Timeline detail
+          rail. Connections are the product's reason to exist, so they live on
+          the content pane, not just the global graph. */}
+      <section className="mt-10 border-t border-border pt-6">
+        <div className="flex items-baseline justify-between">
+          <h3 className="text-h2 text-text-primary">Connections</h3>
+          <span className="text-meta text-text-secondary">
+            {connLoading ? "…" : connections.length}
+          </span>
+        </div>
+
+        {connLoading ? (
+          <div className="mt-4 flex flex-col gap-3" aria-busy="true">
+            {Array.from({ length: 2 }).map((_, i) => (
+              <div
+                key={i}
+                className="h-[64px] w-full max-w-measure animate-pulse rounded-card bg-surface-hover"
+              />
+            ))}
+          </div>
+        ) : groupedConnections.length === 0 ? (
+          <div className="mt-4 max-w-measure rounded-card border border-border bg-bg-app p-6 text-center">
+            <p className="text-ui text-text-secondary">
+              No connections found yet
+            </p>
+            <p className="mt-1 text-meta text-text-tertiary">
+              Run Find connections to scan the library for non-obvious links.
+            </p>
+          </div>
+        ) : (
+          <div className="mt-4 flex max-w-measure flex-col gap-6">
+            {groupedConnections.map((group) => (
+              <div key={group.kind}>
+                <div className="mb-2 flex items-center gap-2">
+                  <KindBadge kind={group.kind as Kind} />
+                  <span className="text-meta text-text-tertiary">
+                    {group.items.length}
+                  </span>
+                </div>
+                <div className="flex flex-col gap-3">
+                  {group.items.map((c) => (
+                    <ConnectedNoteCard
+                      key={c.id}
+                      partnerTitle={partnerTitleOf(c, page.id)}
+                      kind={c.kind}
+                      statement={c.statement}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
     </article>
   ) : (
     <div className="flex h-full items-center justify-center">

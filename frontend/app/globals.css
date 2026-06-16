@@ -136,6 +136,13 @@ summary:focus-visible,
   padding-left: 0 !important;
   padding-right: 0 !important;
 }
+/* A generous, readable editor body — comfortable rhythm so /new feels like a
+   real note app, not a cramped strip. The block gutter (drag/+) still has room. */
+.kg-editor .bn-editor {
+  font-size: 16px;
+  line-height: 1.7;
+  min-height: 320px;
+}
 
 /* --motion-reveal — connection chip / first-insight callout fade+lift (§2/§5).
    Calm settle, no bounce, ≤300ms. Respects reduced-motion. */

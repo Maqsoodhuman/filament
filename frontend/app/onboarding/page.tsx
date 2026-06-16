@@ -148,7 +148,7 @@ export default function OnboardingPage() {
             <FirstInsightCallout connection={insight} />
             <div className="mt-6 flex flex-wrap items-center gap-4">
               <Link
-                href="/"
+                href="/timeline"
                 className="inline-flex min-h-[44px] items-center rounded-sm border border-border bg-bg-card px-4 py-[8px] text-ui text-text-primary transition-colors duration-[120ms] ease-confirm hover:bg-bg-active"
               >
                 Go to your timeline
@@ -177,7 +177,7 @@ export default function OnboardingPage() {
             </p>
             <div className="mt-6 flex flex-wrap items-center justify-center gap-4">
               <Link
-                href="/"
+                href="/timeline"
                 className="inline-flex min-h-[44px] items-center rounded-sm border border-border bg-bg-card px-4 py-[8px] text-ui text-text-primary transition-colors duration-[120ms] ease-confirm hover:bg-bg-active"
               >
                 Go to your timeline
