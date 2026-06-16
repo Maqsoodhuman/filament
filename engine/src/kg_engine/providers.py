@@ -147,36 +147,39 @@ class FakeProvider:
 
     # -- deterministic, varied fake outputs (no network, no "fake" leaking to users) --
 
-    @staticmethod
-    def _fake_reason(user: str) -> dict:
-        """Build a SHORT statement deterministically derived from the two notes' salient tokens,
-        so different pairs get visibly different statements. Never emits the word 'fake'."""
+    # Well-formed, GRAMMATICAL, plausible-but-generic connection statements. These never
+    # interpolate raw note tokens — slotting tokens into templates produced ungrammatical
+    # "Mad-Libs" salad. A stable hash of the pair selects one deterministically, so different
+    # pairs get different (and varied) statements while the choice stays reproducible. Never
+    # emits the word "fake".
+    _REASON_STATEMENTS = (
+        "Both turn on the same underlying mechanism despite unrelated subject matter.",
+        "These share a structural pattern that surface topic-matching would miss.",
+        "The same self-reinforcing dynamic drives both, in different domains.",
+        "Each resolves the same tension between flexibility and commitment.",
+        "Both hinge on a threshold that, once crossed, flips the whole system.",
+        "A feedback loop of the same shape governs both, far apart as they seem.",
+        "Both trade short-term cost for a compounding long-term advantage.",
+        "The same incentive quietly selects for the outcome in each case.",
+        "Both describe a small initial difference amplifying into a large effect.",
+        "Each works by constraining one variable to free up another.",
+    )
+
+    @classmethod
+    def _fake_reason(cls, user: str) -> dict:
+        """Pick a well-formed generic statement deterministically from a stable hash of the
+        pair, so different pairs get visibly different (grammatical) statements. Raw note
+        tokens are NEVER injected into the statement. Never emits the word 'fake'."""
         a_text, b_text = _split_notes(user)
-        a_sal, b_sal = _salient(a_text), _salient(b_text)
-        a_set, b_set = set(a_sal), set(b_sal)
+        a_set, b_set = set(_salient(a_text)), set(_salient(b_text))
 
-        shared = [t for t in a_sal if t in b_set][:3]
-        a_only = [t for t in a_sal if t not in b_set][:2]
-        b_only = [t for t in b_sal if t not in a_set][:2]
-
-        # Pick a template deterministically from the pair's salient vocabulary.
+        # Stable per-pair key (order-independent) drives a varied, reproducible selection.
         key = " ".join(sorted(a_set | b_set))
-        anchor = shared[0] if shared else (a_sal[0] if a_sal else "pattern")
-        a_term = a_only[0] if a_only else (a_sal[0] if a_sal else "one")
-        b_term = b_only[0] if b_only else (b_sal[0] if b_sal else "the other")
-
-        templates = [
-            f"Both turn on the same {anchor} dynamic despite different surfaces.",
-            f"A shared mechanism links {a_term} and {b_term} through {anchor}.",
-            f"The {anchor} structure recurs: {a_term} mirrors {b_term}.",
-            f"Each resolves the same tension around {anchor}.",
-            f"{a_term} and {b_term} are two instances of one {anchor} pattern.",
-        ]
-        statement = templates[_stable_hash(key) % len(templates)]
+        statement = cls._REASON_STATEMENTS[_stable_hash(key) % len(cls._REASON_STATEMENTS)]
         return {
             "connection": True,
-            "shared_structure": f"shared {anchor} structure",
-            "why": f"links {a_term} to {b_term} without sharing topic",
+            "shared_structure": "a shared structural pattern across domains",
+            "why": "the notes converge on one mechanism without sharing a topic",
             "statement": statement,
         }
 
