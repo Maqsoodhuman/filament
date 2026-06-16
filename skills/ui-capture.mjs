@@ -27,6 +27,7 @@ if (!url) {
 }
 
 const VIEWPORTS = [
+  { tag: "wide", width: 1920, height: 1080 }, // real desktop monitors — catches dead-space / narrow-column layout
   { tag: "desktop", width: 1280, height: 900 },
   { tag: "tablet", width: 768, height: 1024 },
   { tag: "mobile", width: 320, height: 720 }, // 320px is the WCAG reflow floor
