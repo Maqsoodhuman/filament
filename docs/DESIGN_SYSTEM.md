@@ -1,6 +1,42 @@
 # Knowledge Graph — Design System
 
-A cross-source synthesis instrument. This doc codifies the approved mockup aesthetic (flat, hairline, single reserved blue accent for AI/connection moments) and the borrowed patterns from the five reference studies into a build-ready spec for Next.js + Tailwind + shadcn/Radix + BlockNote.
+> **v2 — App shell & warm palette (AUTHORITATIVE; supersedes the cool/flat tokens & top-tab layout below where they conflict).** The product is a real application, not a centered document. Capacities-inspired: a persistent left sidebar + a workspace that fills the screen, on warm surfaces with soft rounded cards. The blue-for-connections rule still holds.
+
+## v2.1 Layout — app shell (replaces the centered top-tab layout)
+
+- **`AppShell`** wraps every route: a fixed **left sidebar (≈240px)** + a **workspace** that fills the remaining width (NO centered `max-w` column with dead side-margins — that was the v1 defect).
+- **Sidebar (top→bottom):** logo (rounded blue square + "Knowledge graph") · a **Search / ⌘K** field · primary nav (Timeline · Organize · Graph, each icon + label, active = filled warm pill) · a **NOTEBOOKS** group (dot + name) · pushed to the bottom, a solid **"New note"** button.
+- **Workspace:** a slim top strip (current section name + view actions) over the content. Content may use an internal reading max-width for long prose (notes/editor ~720px) but the *workspace itself* always fills the screen — surfaces like Timeline/Organize/Graph use the full width.
+- Collapsible sidebar on `<lg`; on mobile it becomes a slide-over (hamburger in the top strip).
+
+## v2.2 Warm token set (use these exact values)
+
+| Token | Light | Use |
+|---|---|---|
+| `--bg-app` | `#FBFAF8` | workspace background |
+| `--bg-sidebar` | `#F4F1EB` | sidebar (warm cream) |
+| `--bg-card` | `#FFFFFF` | cards / surfaces |
+| `--bg-active` | `#E7E1D6` | active nav pill, selected row |
+| `--border` | `#ECE7DE` | card/dividers (soft warm hairline) |
+| `--border-sidebar` | `#E7E2D9` | sidebar edge |
+| `--text-primary` | `#2A2723` | titles, body (warm near-black) |
+| `--text-secondary` | `#7C766B` | metadata, snippets (≥4.5:1 on all bgs) |
+| `--text-tertiary` | `#A89F90` | **placeholder only** — never informational text |
+| `--accent-ai` | `#2563EB` | connections ONLY (counts, KIND=mechanism, edges) |
+| `--accent-ai-tint` | `#EFF4FF` | connection pill / callout bg |
+| `--btn-solid` | `#2A2723` bg / `#FBFAF7` text | primary button ("New note", "Save") |
+| `--tag` | `#F4F1EB` bg / `#8A8275` text | neutral tag/source pill |
+
+Dark mode: warm charcoal equivalents (bg `#1B1A17`, sidebar `#211F1B`, card `#252320`, border `#322F2A`, text `#EDEAE3`/`#A89F90`); same accent. Light is the priority; ship a coherent warm dark, don't invert.
+
+## v2.3 Shape & rhythm
+- **Radius:** cards `12px`, buttons/inputs `8px`, pills `999px`. (Warmer/rounder than v1's 6–8px.)
+- **Borders:** soft warm `0.5px solid var(--border)`. No shadows except the two floating layers (⌘K palette, hover popover).
+- KIND coloring, connection-chip, and all v1 component specs below still apply — re-skinned to the warm tokens.
+
+---
+
+A cross-source synthesis instrument. The sections below are the v1 reference (still valid for component behavior, KIND rules, per-surface patterns); apply them with the v2 shell + warm tokens above.
 
 ---
 
