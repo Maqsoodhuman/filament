@@ -89,3 +89,23 @@ Filament's note `{ id, section, emoji, cover, title, tags, created, blocks[] }` 
 ## 6. Build approach (when we build)
 
 One cohesive pass, not a committee. Stand up Filament as the frontend shell (its CSS + four fonts + components), then wire each surface to the engine API and graft on the connections/intersections/clusters components above — designed to match Filament's hand, reviewed at 1920 as a whole, not screen-by-screen by separate agents. The design above is the single source of truth so the vision doesn't fragment again.
+
+## 7. As built (implementation — this doc is now the design authority)
+
+The frontend (`frontend/`) was rebuilt on this vision. **This is the authoritative design doc**; the older austere "v2" `DESIGN_SYSTEM.md` has been removed. What shipped:
+
+**Tokens** (`app/globals.css`) — warm paper `#F7F6F2` / white `#FFFFFF`; dark ink `#161A2B`; **filament amber `#F2A93B`** (+ deep `#E0902A`); **indigo `#5B6CF0`**; section palette coral/teal/violet/amber/slate/rose. Radii 18 (cards) / 12 (controls) / 100 (pills). Depth via layered shadow + hover-lift `translateY(-3px)`.
+
+**Fonts** (`app/layout.tsx`, `next/font/google`) — Space Grotesk (brand/headings), Newsreader incl. italic (reading body + hero *em*), Inter (UI), JetBrains Mono (meta/tags/`q`). Newsreader needs `adjustFontFallback:false`.
+
+**The colour law** — amber == a structural (`same mechanism`) connection; indigo == `same dynamic`; slate == `same topic`. Applied to KIND chips, graph edges, connection cards, the hero, and the brand mark.
+
+**Surfaces built** — Home (`/`, marketing nav + hero connection-field + engine pipeline + KINDs + sources + honest-empty principle + open-core editions + FAQ + footer); Notes (`/notes`, 288px list · block editor · 320px Connections panel); Organized (`/organize`, OneNote 3-pane over real AI clusters + per-page connections); Knowledge graph (`/graph`, dark d3 stage with KIND-typed edges + Insights/Selected panel); Onboarding (`/onboarding`, import → first-insight); Sign in (`/signin`, production-style auth shell — Google + GitHub OAuth + email/password, no real auth wired yet); Product (`/product`, marketing).
+
+**Marketing nav** (`components/MarketingNav.tsx`) — brand + Product / Resources dropdowns + Download + Pricing + Sign in + Open app. Hover previews a menu; a click *pins* it open (holds until clicked again / outside / Escape); only one menu open at a time.
+
+**Hero connection-field** — the home hero is a dark block that breathes (glow in/out, slight outward swell); the floating note-category chips (Research, Technology, Meeting notes, …) are graph **nodes**, joined by dashed amber filaments (marching, glowing) that form a symmetric loop *around* the headline (side chains + top/bottom arcs), never crossing the text. Glow uses CSS `drop-shadow`, not an SVG filter (vertical edges have a zero-width bbox that collapses object-bounding-box filters).
+
+**Editor details** — the block handle (+ / duplicate / delete) lives in a 56px left gutter beside the text (never overlapping); the tag input is Twitter-style (a `#` prefix appears and text turns indigo as you type; commit on space / comma / Enter). Content-editing surfaces (title, blocks) show no focus-ring box — the caret is the focus indicator. The graph pins a node and stops the simulation on click so the layout stabilises for reading.
+
+**Stack deltas from the original plan** — the editor is a **ported, hand-rolled BlockNote-style block editor** (`components/NoteEditor.tsx`: slash menu, callouts, todos, quote/code, cover, emoji, tag chips, float toolbar, markdown-paste), **not** the BlockNote package. Icons via `lucide-react`; graph via `d3`. **`lib/store.ts` is the single seam for engine-API wiring** — a client store (localStorage) seeded with the signature connections; swapping its helpers to `/notes /connections /clusters /scan /find-connections` is the remaining integration step, and the surfaces don't change when it does. Honest-empty (q≥3, no forced connections) is enforced in the store + panels.

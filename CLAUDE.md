@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current state: v0 engine in progress
 
-The `engine/` directory holds the **headless connection engine (v0)** — the moat. The web app (Next.js) is still design-only. The architecture is finalized and authoritative; before changing the design, read `docs/ARCHITECTURE.md`.
+The `engine/` directory holds the **headless connection engine (v0)** — the moat. The web app (`frontend/`, Next.js) is now **built on the Filament design system** (see `docs/COHESIVE_DESIGN.md` §7) — all surfaces render against a client data store (`frontend/lib/store.ts`) that is the single seam for wiring the engine API. The architecture is finalized and authoritative; before changing the design, read `docs/ARCHITECTURE.md` and `docs/COHESIVE_DESIGN.md`.
 
 ### Engine commands (run from `engine/`)
 
@@ -53,7 +53,7 @@ See `docs/DESIGN_DECISIONS.md` Part B for the experiment that justifies #4 and #
 - **Async**: Dramatiq on Redis. All engine work is async, off every HTTP write path, idempotent, keyed by `(content_hash, model_version)`.
 - **Data**: single managed Postgres 16 + pgvector (HNSW) + pg_trgm. Connections are strictly **intra-user** (shard by `user_id`) — this is how the N² problem is bounded.
 - **Models**: Anthropic — Haiku 4.5 (extraction) · Sonnet 4.6 (reasoning + verifier) · **Opus 4.8 (eval judge ONLY, never per-pair)**. Embeddings: Voyage `voyage-3-large`. Routed through one `model_router` module; effort/prompt-version is config, not call sites.
-- **Frontend** (v1): Next.js (App Router) + TypeScript + Tailwind/shadcn + TanStack Query/Virtual. Thin BFF via Next.js Route Handlers — **no LLM/embedding work on the API path**. Note editor = **BlockNote** (TipTap/ProseMirror) with tables/images/callouts/code; images → S3/R2.
+- **Frontend** (built): Next.js (App Router) + TypeScript + Tailwind on the **Filament design system** (`docs/COHESIVE_DESIGN.md`) — four fonts, amber-is-structural colour law, `lucide-react` + `d3`. Thin BFF via Next.js Route Handlers — **no LLM/embedding work on the API path**. Note editor = a **hand-rolled BlockNote-style block editor** (`components/NoteEditor.tsx`) with callouts/todos/quote/code/slash-menu/markdown-paste (the BlockNote package was dropped); images → S3/R2.
 - **Hosting**: Fly.io (api/workers/Postgres) + Vercel (frontend).
 - **Model runtime**: all calls go through `model_router`, so **local LLMs (Ollama) are a config swap** — use them for dev / the floor experiment, validate via the eval harness before trusting local for the reasoning+verifier (moat) stages; hybrid (local extract/embed + API reason/verify) is the expected sweet spot. The core loop is a **deterministic pipeline, not autonomous agents** — optionally orchestrated on LangGraph; reserve true agents for a v2 "deep connection explorer." See `ARCHITECTURE.md` §3b.
 
@@ -80,5 +80,5 @@ See `docs/DESIGN_DECISIONS.md` Part B for the experiment that justifies #4 and #
 | `docs/DESIGN_DECISIONS.md` | *Why* the product and architecture are shaped this way — strategy debate + the Gate-1 experiment. |
 | `docs/ROADMAP.md` | What ships in v0 / v1 / v2 and the carried open risks. |
 | `docs/TECH_STACK.md` | Finalized tech stack table. |
-| `docs/DESIGN_SYSTEM.md` | Build-ready UI design system (tokens, components, per-surface). |
+| `docs/COHESIVE_DESIGN.md` | The frontend design system & vision (Filament × the engine) — tokens, fonts, colour law, surfaces, and §7 "as built". The single design source of truth. |
 | `docs/BACKEND_GUIDE.md` | Backend packages, best-practice patterns, project layout — read before production backend work. |

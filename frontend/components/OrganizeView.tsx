@@ -1,480 +1,171 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import type { components } from "@/lib/api-types";
-import ConnectedNoteCard, {
-  KindBadge,
-  KIND_ORDER,
-} from "@/components/ConnectedNoteCard";
+import { useRouter } from "next/navigation";
+import { Maximize2, Minimize2, Link2, PenLine } from "lucide-react";
+import { useStore, formatDay, formatFull, type Cluster, type Note } from "@/lib/store";
+import { ReadBlock, readNumbers } from "./ReadBlocks";
+import ConnectionCard from "./ConnectionCard";
 
-type ClusterOut = components["schemas"]["ClusterOut"];
-type NoteOut = components["schemas"]["NoteOut"];
-type ConnectionOut = components["schemas"]["ConnectionOut"];
-type Kind = ConnectionOut["kind"];
+// Organized (docs/COHESIVE_DESIGN.md §3): Filament's OneNote 3-pane, but the
+// sections are REAL AI clusters (names + live counts + colour dots, multi-
+// section membership) from the engine's /clusters — not static categories. The
+// content pane shows the page on ruled paper PLUS its KIND-typed connections,
+// and a full-screen toggle opens the page node full.
 
-// Resolve the partner-note title: a connection lists both endpoints (a/b), so
-// pick whichever is NOT the note we're viewing.
-function partnerTitleOf(c: ConnectionOut, noteId: string): string {
-  return c.a_id === noteId ? c.b_title : c.a_title;
-}
+export default function OrganizeView() {
+  const router = useRouter();
+  const { clusters, notes, connectionsFor, noteById } = useStore();
+  const [clusterId, setClusterId] = useState<string | null>(null);
+  const [pageId, setPageId] = useState<string | null>(null);
+  const [full, setFull] = useState(false);
 
-// Deterministic neutral section dot. Sections are NOT connections, so they
-// never draw the reserved blue (§1). Color is a quiet identity cue only —
-// muted neutrals derived deterministically from the cluster id.
-const SECTION_DOTS = ["#A8A29E", "#78716C", "#57534E", "#8C8A86", "#6B6660"];
-function sectionDot(id: string): string {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
-  return SECTION_DOTS[h % SECTION_DOTS.length];
-}
+  const activeCluster: Cluster | undefined =
+    clusters.find((c) => c.id === clusterId) ?? clusters[0];
 
-// Disclosure triangle (Tabler chevron) — left tree, compact rows (§3).
-function Chevron({ open }: { open: boolean }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="12"
-      height="12"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      style={{
-        transform: open ? "rotate(90deg)" : "rotate(0deg)",
-        transition: "transform 120ms cubic-bezier(0.2,0,0,1)",
-      }}
-    >
-      <path d="M9 6l6 6l-6 6" />
-    </svg>
-  );
-}
-
-// Back chevron for the mobile drill-down.
-function BackChevron() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="16"
-      height="16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M15 6l-6 6l6 6" />
-    </svg>
-  );
-}
-
-// Small neutral sparkle/AI glyph marking a section as AI-clustered (§3). Neutral.
-function SparkleIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="13"
-      height="13"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M16 18a2 2 0 0 1 2 2a2 2 0 0 1 2 -2a2 2 0 0 1 -2 -2a2 2 0 0 1 -2 2zm0 -12a2 2 0 0 1 2 2a2 2 0 0 1 2 -2a2 2 0 0 1 -2 -2a2 2 0 0 1 -2 2zm-7 12a6 6 0 0 1 6 -6a6 6 0 0 1 -6 -6a6 6 0 0 1 -6 6a6 6 0 0 1 6 6z" />
-    </svg>
-  );
-}
-
-// Calm loading skeleton (§5: skeleton over telemetry).
-function OrganizeSkeleton() {
-  return (
-    <div className="px-4 py-6" aria-busy="true" aria-live="polite">
-      <span className="sr-only">Loading your sections…</span>
-      <div className="flex flex-col gap-3">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <div
-            key={i}
-            className="h-[20px] w-full max-w-[320px] animate-pulse rounded-sm bg-surface-hover"
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// Organize — Notebook → Section → Page (§4.3 / §6.4). Desktop: a 3-pane grid.
-// Below `md`: a single-column drill-down (sections → pages → content, with a
-// back control) so there is no horizontal overflow and every row is ≥44px on
-// touch. Truncated labels carry a title= tooltip. Neutral; no blue here.
-export default function OrganizeView({
-  clusters,
-  notes,
-  loading = false,
-}: {
-  clusters: ClusterOut[];
-  notes: NoteOut[];
-  loading?: boolean;
-}) {
-  const notesById = useMemo(() => {
-    const m = new Map<string, NoteOut>();
-    for (const n of notes) m.set(n.id, n);
-    return m;
-  }, [notes]);
-
-  const [activeSection, setActiveSection] = useState<string | null>(
-    clusters[0]?.id ?? null,
-  );
-
-  const section = clusters.find((c) => c.id === activeSection) ?? null;
-  const pages: NoteOut[] = section
-    ? section.note_ids
-        .map((id) => notesById.get(id))
-        .filter((n): n is NoteOut => Boolean(n))
-    : [];
-
-  const [activePage, setActivePage] = useState<string | null>(
-    pages[0]?.id ?? null,
-  );
-  const page = pages.find((p) => p.id === activePage) ?? pages[0] ?? null;
-
-  // Mobile drill-down level: which pane is showing.
-  const [mobileLevel, setMobileLevel] = useState<"sections" | "pages" | "page">(
-    "sections",
-  );
-
-  // Connections for the open page — fetched live from the BFF proxy
-  // (GET /connections?note_id={id}) so the content pane shows that note's
-  // KIND-grouped connections, like the Timeline detail rail. Falls back to the
-  // note's connection_count==0 quietly; an error/empty list shows the empty
-  // state. Re-runs whenever the open page changes.
-  const openId = page?.id ?? null;
-  const [connections, setConnections] = useState<ConnectionOut[]>([]);
-  const [connLoading, setConnLoading] = useState(false);
+  const pages: Note[] = useMemo(() => {
+    if (!activeCluster) return [];
+    return activeCluster.note_ids
+      .map((id) => notes.find((n) => n.id === id))
+      .filter((n): n is Note => Boolean(n))
+      .sort((a, b) => b.updated - a.updated);
+  }, [activeCluster, notes]);
 
   useEffect(() => {
-    if (!openId) {
-      setConnections([]);
-      return;
-    }
-    let cancelled = false;
-    setConnLoading(true);
-    fetch(`/api/connections?note_id=${encodeURIComponent(openId)}`, {
-      cache: "no-store",
-    })
-      .then((r) => (r.ok ? r.json() : []))
-      .then((data: ConnectionOut[]) => {
-        if (!cancelled) setConnections(Array.isArray(data) ? data : []);
-      })
-      .catch(() => {
-        if (!cancelled) setConnections([]);
-      })
-      .finally(() => {
-        if (!cancelled) setConnLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [openId]);
+    if (!pages.find((p) => p.id === pageId)) setPageId(pages[0]?.id ?? null);
+  }, [pages, pageId]);
 
-  // Group the open page's connections by KIND, structural-first.
-  const groupedConnections = openId
-    ? KIND_ORDER.map((kind) => ({
-        kind,
-        items: connections.filter((c) => c.kind === kind),
-      })).filter((g) => g.items.length > 0)
-    : [];
+  const page = pages.find((p) => p.id === pageId) ?? pages[0];
+  const numbers = useMemo(() => (page ? readNumbers(page.blocks) : {}), [page]);
 
-  if (loading) {
+  // which other clusters this page also belongs to (multi-section membership)
+  const alsoIn = useMemo(() => {
+    if (!page || !activeCluster) return [];
+    return clusters
+      .filter((c) => c.id !== activeCluster.id && c.note_ids.includes(page.id))
+      .map((c) => c.label);
+  }, [page, activeCluster, clusters]);
+
+  const conns = page ? connectionsFor(page.id).filter((c) => c.q >= 3) : [];
+
+  if (!activeCluster) {
     return (
-      <div className="flex flex-col">
-        <div className="flex items-center gap-3 border-b border-hairline border-border-hairline px-4 py-2">
-          <span className="rounded-sm bg-surface-hover px-3 py-1 text-ui font-medium text-text-primary">
-            Research library
-          </span>
-        </div>
-        <OrganizeSkeleton />
+      <div className="gp-empty" style={{ marginTop: 80 }}>
+        No clusters yet. Write or import a few notes and the engine will group them.
       </div>
     );
   }
 
-  // Zero-cluster: one centered empty state, not three half-empty panes
-  // (empty-states — a single helpful message beats placeholder chrome).
-  if (clusters.length === 0) {
-    return (
-      <div className="flex flex-col">
-        <div className="flex items-center gap-3 border-b border-hairline border-border-hairline px-4 py-2">
-          <span className="truncate rounded-sm bg-surface-hover px-3 py-1 text-ui font-medium text-text-primary">
-            Research library
-          </span>
+  return (
+    <div className={`one-layout ${full ? "full" : ""}`}>
+      {/* rail — AI notebooks / clusters */}
+      <div className="one-rail">
+        <div className="one-nb">
+          <span className="cube" />
+          Research library
         </div>
-        <div className="flex min-h-[400px] flex-col items-center justify-center px-4 py-12 text-center">
-          <p className="text-ui text-text-secondary">No sections yet</p>
-          <p className="mt-1 max-w-[420px] text-meta text-text-tertiary">
-            Run Find connections to let the engine cluster your library into
-            sections.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  // Shared row renderers ---------------------------------------------------
-  const sectionRows = (
-    <nav className="flex flex-col">
-      {clusters.map((c) => {
-        const isActive = c.id === activeSection;
-        return (
+        {clusters.map((c) => (
           <button
             key={c.id}
-            type="button"
-            onClick={() => {
-              setActiveSection(c.id);
-              setActivePage(null);
-              setMobileLevel("pages");
-            }}
-            title={c.label}
-            className={
-              "flex min-h-[44px] items-center gap-2 px-4 text-left text-ui transition-colors duration-[120ms] ease-confirm md:min-h-[36px] " +
-              (isActive
-                ? "bg-surface-hover text-text-primary"
-                : "text-text-secondary hover:bg-surface-hover hover:text-text-primary")
-            }
+            className={`one-sec ${activeCluster.id === c.id ? "on" : ""}`}
+            style={activeCluster.id === c.id ? { borderLeftColor: c.color } : undefined}
+            onClick={() => setClusterId(c.id)}
           >
-            <Chevron open={isActive} />
-            <span
-              className="h-2 w-2 shrink-0 rounded-pill"
-              style={{ background: sectionDot(c.id) }}
-            />
-            <span className="truncate">{c.label}</span>
-            <span className="ml-auto flex shrink-0 items-center gap-1 text-text-tertiary">
-              <SparkleIcon />
-              <span className="text-meta">{c.note_count}</span>
-            </span>
+            <span className="tab-c" style={{ background: c.color }} />
+            <span className="txt">{c.label}</span>
+            <span className="ct">{c.note_count}</span>
           </button>
-        );
-      })}
-      {clusters.length === 0 && (
-        <p className="px-4 py-3 text-meta text-text-secondary">
-          No sections yet.
-        </p>
-      )}
-    </nav>
-  );
+        ))}
+      </div>
 
-  const pageRows = (
-    <nav className="flex flex-col">
-      {pages.map((p) => {
-        const isActive = page?.id === p.id;
-        const title = p.title || "Untitled";
-        return (
+      {/* pages */}
+      <div className="one-pages">
+        <div className="one-pages-head">
+          <span>Pages</span>
+          <span>{pages.length}</span>
+        </div>
+        {pages.map((p) => (
           <button
             key={p.id}
-            type="button"
-            onClick={() => {
-              setActivePage(p.id);
-              setMobileLevel("page");
-            }}
-            title={title}
-            className={
-              "flex min-h-[44px] items-center gap-2 px-4 text-left text-ui transition-colors duration-[120ms] ease-confirm md:min-h-[36px] " +
-              (isActive
-                ? "bg-surface-hover text-text-primary"
-                : "text-text-secondary hover:bg-surface-hover hover:text-text-primary")
-            }
+            className={`one-page ${page?.id === p.id ? "on" : ""}`}
+            style={{ ["--seccolor" as string]: activeCluster.color }}
+            onClick={() => setPageId(p.id)}
           >
-            <span className="truncate">{title}</span>
+            <div className="pg-ti">
+              <span>{p.emoji}</span>
+              <span>{p.title || "Untitled"}</span>
+            </div>
+            <div className="pg-dt">{formatDay(p.updated)}</div>
           </button>
-        );
-      })}
-      {pages.length === 0 && (
-        <p className="px-4 py-3 text-meta text-text-secondary">
-          Select a section.
-        </p>
-      )}
-    </nav>
-  );
-
-  const pageContent = page ? (
-    <article className="min-w-0">
-      <div className="flex items-start justify-between gap-4">
-        <h2 className="min-w-0 text-display text-text-primary">
-          {page.title || "Untitled"}
-        </h2>
-        {/* Open full — navigates to the full-screen note detail (§ note detail). */}
-        <Link
-          href={`/notes/${page.id}`}
-          className="inline-flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-sm border border-border bg-bg-card px-3 text-ui text-text-primary transition-colors duration-[120ms] ease-confirm hover:bg-bg-active"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            width="16"
-            height="16"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.75"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M14 4h6v6" />
-            <path d="M10 14l10 -10" />
-            <path d="M18 14v5a2 2 0 0 1 -2 2h-11a2 2 0 0 1 -2 -2v-11a2 2 0 0 1 2 -2h5" />
-          </svg>
-          Open full
-        </Link>
-      </div>
-      <div className="mt-2 text-meta text-text-secondary">{page.source}</div>
-      <div className="mt-6 max-w-measure whitespace-pre-wrap text-body text-text-primary">
-        {page.body}
+        ))}
+        {pages.length === 0 && (
+          <div style={{ padding: 18, color: "var(--text-faint)", fontSize: 13 }}>No pages here yet.</div>
+        )}
       </div>
 
-      {/* This note's connections — KIND-grouped cards, like the Timeline detail
-          rail. Connections are the product's reason to exist, so they live on
-          the content pane, not just the global graph. */}
-      <section className="mt-10 border-t border-border pt-6">
-        <div className="flex items-baseline justify-between">
-          <h3 className="text-h2 text-text-primary">Connections</h3>
-          <span className="text-meta text-text-secondary">
-            {connLoading ? "…" : connections.length}
+      {/* content */}
+      <div className="one-content">
+        <div className="one-bar">
+          <span className="ctag" style={{ color: activeCluster.color }}>
+            ● {activeCluster.label}
+            {alsoIn.length > 0 && (
+              <span style={{ color: "var(--text-faint)" }}> · also in {alsoIn.join(", ")}</span>
+            )}
           </span>
+          <span className="grow" />
+          <button className="one-full-btn" onClick={() => setFull((v) => !v)}>
+            {full ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+            {full ? "Exit full screen" : "Open full"}
+          </button>
         </div>
 
-        {connLoading ? (
-          <div className="mt-4 flex flex-col gap-3" aria-busy="true">
-            {Array.from({ length: 2 }).map((_, i) => (
-              <div
-                key={i}
-                className="h-[64px] w-full max-w-measure animate-pulse rounded-card bg-surface-hover"
-              />
-            ))}
-          </div>
-        ) : groupedConnections.length === 0 ? (
-          <div className="mt-4 max-w-measure rounded-card border border-border bg-bg-app p-6 text-center">
-            <p className="text-ui text-text-secondary">
-              No connections found yet
-            </p>
-            <p className="mt-1 text-meta text-text-tertiary">
-              Run Find connections to scan the library for non-obvious links.
-            </p>
-          </div>
-        ) : (
-          <div className="mt-4 flex max-w-measure flex-col gap-6">
-            {groupedConnections.map((group) => (
-              <div key={group.kind}>
-                <div className="mb-2 flex items-center gap-2">
-                  <KindBadge kind={group.kind as Kind} />
-                  <span className="text-meta text-text-tertiary">
-                    {group.items.length}
-                  </span>
-                </div>
-                <div className="flex flex-col gap-3">
-                  {group.items.map((c) => (
-                    <ConnectedNoteCard
+        {page ? (
+          <>
+            <div className="one-page-body">
+              <h1 className="one-title">
+                <span>{page.emoji}</span>
+                {page.title || "Untitled"}
+              </h1>
+              <p className="one-date">{formatFull(page.updated)}</p>
+              {page.blocks.map((b) => (
+                <ReadBlock key={b.id} block={b} num={numbers[b.id]} />
+              ))}
+            </div>
+
+            {/* the page's connections — the engine grafted into Organize */}
+            <div className="one-conns">
+              <p className="label">
+                <Link2 size={13} style={{ color: "var(--filament-deep)" }} /> Connections
+              </p>
+              {conns.length > 0 ? (
+                <div className="one-conns-grid">
+                  {conns.map((c) => (
+                    <ConnectionCard
                       key={c.id}
-                      partnerTitle={partnerTitleOf(c, page.id)}
-                      kind={c.kind}
-                      statement={c.statement}
+                      c={c}
+                      partnerEmoji={noteById(c.b_id)?.emoji}
+                      onOpen={() => router.push(`/notes?id=${c.b_id}`)}
                     />
                   ))}
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-    </article>
-  ) : (
-    <div className="flex h-full items-center justify-center">
-      <p className="text-ui text-text-secondary">Select a page to read it.</p>
-    </div>
-  );
-
-  return (
-    <div className="flex flex-col">
-      {/* Notebook strip (§6.4). */}
-      <div className="flex items-center gap-3 border-b border-hairline border-border-hairline px-4 py-2">
-        <span className="truncate rounded-sm bg-surface-hover px-3 py-1 text-ui font-medium text-text-primary">
-          Research library
-        </span>
-        <button
-          type="button"
-          className="shrink-0 text-meta text-text-secondary hover:text-text-primary"
-        >
-          + New notebook
-        </button>
-      </div>
-
-      {/* MOBILE (< md): single-column drill-down with a back control. */}
-      <div className="md:hidden">
-        {mobileLevel === "sections" && (
-          <div>
-            <div className="px-4 py-3 text-meta uppercase tracking-wide text-text-secondary">
-              Sections
+              ) : (
+                <div className="honest-empty">
+                  <p className="he-ti">No threads yet</p>
+                  <p>The engine found nothing genuinely non-obvious for this page. An empty result is honest.</p>
+                </div>
+              )}
+              <button
+                className="find-btn"
+                style={{ marginTop: 14, maxWidth: 260 }}
+                onClick={() => router.push(`/notes?id=${page.id}`)}
+              >
+                <PenLine size={15} /> Open in editor
+              </button>
             </div>
-            {sectionRows}
-          </div>
+          </>
+        ) : (
+          <div className="gp-empty" style={{ marginTop: 60 }}>Pick a section to read its pages.</div>
         )}
-        {mobileLevel === "pages" && (
-          <div>
-            <button
-              type="button"
-              onClick={() => setMobileLevel("sections")}
-              className="flex min-h-[44px] w-full items-center gap-1 border-b border-hairline border-border-hairline px-4 text-left text-ui text-text-secondary hover:text-text-primary"
-            >
-              <BackChevron /> Sections
-            </button>
-            <div className="truncate px-4 py-3 text-meta uppercase tracking-wide text-text-secondary">
-              {section ? section.label : "Section"}
-            </div>
-            {pageRows}
-          </div>
-        )}
-        {mobileLevel === "page" && (
-          <div>
-            <button
-              type="button"
-              onClick={() => setMobileLevel("pages")}
-              className="flex min-h-[44px] w-full items-center gap-1 border-b border-hairline border-border-hairline px-4 text-left text-ui text-text-secondary hover:text-text-primary"
-            >
-              <BackChevron /> {section ? section.label : "Pages"}
-            </button>
-            <div className="bg-surface px-5 py-6">{pageContent}</div>
-          </div>
-        )}
-      </div>
-
-      {/* DESKTOP (>= md): three panes. */}
-      <div className="hidden min-h-[560px] grid-cols-[280px_320px_1fr] md:grid">
-        <div className="border-r border-hairline border-border-hairline">
-          <div className="px-4 py-3 text-meta uppercase tracking-wide text-text-secondary">
-            Sections
-          </div>
-          {sectionRows}
-        </div>
-
-        <div className="border-r border-hairline border-border-hairline">
-          <div
-            className="break-words px-4 pt-3 text-meta uppercase tracking-wide text-text-secondary"
-            title={section ? section.label : undefined}
-          >
-            {section ? section.label : "Section"}
-          </div>
-          {/* Only "Pages" is wired today. Table/Board are deferred, so we don't
-              render inert tabs (dead affordance — forms/state-clarity). */}
-          <div className="flex items-center gap-4 border-b border-hairline border-border-hairline px-4 pb-2 pt-2">
-            <span className="text-meta font-medium text-text-primary [border-bottom:1.5px_solid_var(--text-primary)] pb-[2px]">
-              Pages
-            </span>
-          </div>
-          {pageRows}
-        </div>
-
-        <div className="bg-surface px-8 py-8">{pageContent}</div>
       </div>
     </div>
   );

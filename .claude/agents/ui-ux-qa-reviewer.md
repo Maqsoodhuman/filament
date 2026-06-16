@@ -30,7 +30,7 @@ and prints an `overflow=true/false` flag per width. **Read every PNG with the Re
 actual pixels.** If a screen has interactive states (hover, focus, open palette, post-submit, error),
 say which ones you could not capture statically and what you'd need to test them.
 
-If a `DESIGN_SYSTEM.md` (or design tokens) exists in the repo, **read it and review against it** —
+If a design system (e.g. `docs/COHESIVE_DESIGN.md` or design tokens) exists in the repo, **read it and review against it** —
 deviations from the system's own tokens/rules are defects, not opinions.
 
 ## The rule checklist (apply it)

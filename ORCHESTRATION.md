@@ -16,7 +16,7 @@ One repo, two lanes (a deterministic Python engine + a visual Next.js frontend).
   **Gate:** `pytest` green AND `skills/eval-gate.sh` passes (q≥3, precision ≥ 0.75, garbage 0) with `KG_PROVIDER=ollama`.
 - **Frontend lane** owns: `frontend/app/`, `frontend/components/`, `frontend/lib/` (except the generated `api-types.ts`), styling.
   **Gate:** `next build` (or `npm run typecheck`) passes AND `skills/visual-check.mjs` passes for every changed route.
-- **Contract (orchestrator only):** the OpenAPI schema, `frontend/lib/api-types.ts`, `docs/DESIGN_SYSTEM.md`. No worker edits these directly.
+- **Contract (orchestrator only):** the OpenAPI schema, `frontend/lib/api-types.ts`, `docs/COHESIVE_DESIGN.md`. No worker edits these directly.
 
 ## Subagents
 

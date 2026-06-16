@@ -25,7 +25,7 @@ severity-ordered defect report and a `QA VERDICT: PASS|FAIL` line that can gate 
 1. **Load the rubric.** Read `.claude/skills/ui-ux-qa/checklist.md` (the priority-ranked ~99-rule
    taxonomy — WCAG 2.2 / Apple HIG / Material / CWV, adapted from `ui-ux-pro-max`). Review in priority
    order 1→10 and cite the rule id in each finding. Also read the **design system** if present
-   (`docs/DESIGN_SYSTEM.md` or token files) — deviations from the project's own tokens are defects.
+   (`docs/COHESIVE_DESIGN.md` or token files) — deviations from the project's own tokens are defects.
 2. **Capture the screen responsively** (if given a URL and the app is up):
    ```bash
    node skills/ui-capture.mjs --url <url> --name <slug> --out-dir /tmp --full

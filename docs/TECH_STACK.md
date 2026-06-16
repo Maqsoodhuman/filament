@@ -5,10 +5,10 @@ The consolidated, decided stack. See [ARCHITECTURE.md](ARCHITECTURE.md) for the 
 | Layer | Choice | Notes |
 |---|---|---|
 | **Frontend framework** | Next.js (App Router) + React + TypeScript | SSR/streaming for fast timeline & import progress |
-| **Styling / components** | Tailwind CSS + Radix / shadcn | Per [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md) tokens |
-| **Lists / virtualization** | TanStack Query + TanStack Virtual | Handles 10k+ note corpora |
-| **Note editor** | **BlockNote** (TipTap / ProseMirror) | Tables, images, callouts, code, `/` menu |
-| **Local graph** | react-force-graph / sigma.js | Deterministic radial, no physics |
+| **Styling / components** | Tailwind CSS + the Filament design system | Per [COHESIVE_DESIGN.md](COHESIVE_DESIGN.md): four fonts, amber colour law, `lucide-react` icons |
+| **Lists / virtualization** | TanStack Query + TanStack Virtual | Handles 10k+ note corpora (planned for large libraries) |
+| **Note editor** | Hand-rolled block editor (`components/NoteEditor.tsx`) | BlockNote-style: callouts, todos, quote/code, `/` menu, markdown-paste. (BlockNote pkg dropped.) |
+| **Local graph** | `d3` force layout | KIND-typed edges; amber `same mechanism` glows |
 | **API / BFF** | Next.js Route Handlers | Thin — no model/embedding work on this path |
 | **Engine** | Python 3.12 + FastAPI (`kg_engine`) | The moat; the connection pipeline |
 | **Async / queue** | Dramatiq on Redis (+ APScheduler beat) | Off the write path; scheduler folded into worker |
