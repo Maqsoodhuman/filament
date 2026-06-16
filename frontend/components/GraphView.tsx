@@ -48,7 +48,7 @@ export default function GraphView() {
   const { notes, connections, clusters, connectionsFor, noteById } = useStore();
   const svgRef = useRef<SVGSVGElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const d3State = useRef<{ link?: d3.Selection<any, any, any, any>; node?: d3.Selection<any, any, any, any> }>({});
+  const d3State = useRef<{ link?: d3.Selection<any, any, any, any>; node?: d3.Selection<any, any, any, any>; sim?: d3.Simulation<any, any> }>({});
   const [dim, setDim] = useState({ w: 800, h: 600 });
   const [selected, setSelected] = useState<string | null>(null);
   const [tab, setTab] = useState<"insights" | "note">("insights");
@@ -109,6 +109,10 @@ export default function GraphView() {
       .on("click", (_e, d) => {
         setSelected(d.id);
         setTab("note");
+        // pin the clicked node and freeze the layout so it stabilises for reading
+        d.fx = d.x;
+        d.fy = d.y;
+        sim.stop();
       });
 
     node
@@ -170,7 +174,7 @@ export default function GraphView() {
       });
     node.call(drag as any);
 
-    d3State.current = { link, node };
+    d3State.current = { link, node, sim };
     return () => {
       sim.stop();
     };
@@ -216,7 +220,11 @@ export default function GraphView() {
         <svg
           ref={svgRef}
           onClick={(e) => {
-            if ((e.target as Element).tagName === "svg") setSelected(null);
+            if ((e.target as Element).tagName === "svg") {
+              setSelected(null);
+              // let the graph relax again when you click away to deselect
+              d3State.current.sim?.alpha(0.3).restart();
+            }
           }}
         />
         {selected && (
