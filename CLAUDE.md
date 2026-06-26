@@ -81,4 +81,7 @@ See `docs/DESIGN_DECISIONS.md` Part B for the experiment that justifies #4 and #
 | `docs/ROADMAP.md` | What ships in v0 / v1 / v2 and the carried open risks. |
 | `docs/TECH_STACK.md` | Finalized tech stack table. |
 | `docs/COHESIVE_DESIGN.md` | The frontend design system & vision (Filament × the engine) — tokens, fonts, colour law, surfaces, and §7 "as built". The single design source of truth. |
-| `docs/BACKEND_GUIDE.md` | Backend packages, best-practice patterns, project layout — read before production backend work. |
+| `docs/BACKEND_PIPELINE.md` | **The authoritative backend design** — consensus decisions (D1–D9), the component-by-component pipeline (Community vs Premium), and the sequenced fix plan. Supersedes the contested calls in BACKEND_GUIDE/ARCHITECTURE. Read first for production backend work. |
+| `docs/SYSTEM_DESIGN.md` | Production **HLD** — deployment topology, data model (DDL/keys/indexes/RLS), end-to-end flows, job state machine, scaling, failure modes, security, cost, SLOs, and cross-cutting properties (availability/CAP/outbox/caching). |
+| `docs/LOW_LEVEL_DESIGN.md` | Production **LLD** — module boundaries, interface Protocols (Provider/VectorIndex/Store/Queue/Repos), worker actor signatures, error taxonomy, idempotency keys, and key algorithms in pseudocode. |
+| `docs/BACKEND_GUIDE.md` | Backend packages, best-practice patterns, project layout. Read with BACKEND_PIPELINE.md (which revises its edition-default/sequencing calls). |

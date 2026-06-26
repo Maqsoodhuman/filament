@@ -1,6 +1,27 @@
 # Knowledge Graph — Backend Engineering Guide
 
-This is the authoritative backend guide for taking the `kg_engine` v0 engine to the planned FastAPI + Dramatiq + Postgres/pgvector production system. It resolves the five specialist reviews into one decisive direction.
+This is the backend guide for taking the `kg_engine` v0 engine to the planned FastAPI + Dramatiq + Postgres/pgvector production system. It resolves the five specialist reviews into one decisive direction.
+
+> **⚠️ Superseded calls — read `BACKEND_PIPELINE.md` first.** A later 5-perspective debate revised
+> several decisions in this guide. Where they conflict, **`BACKEND_PIPELINE.md` wins.** Specifically:
+> - **Async substrate (§1, §2.1):** Dramatiq+Redis is the *Premium* default, not the only path.
+>   Async substrate is a seam `KG_QUEUE=pg|redis`; **Community defaults to a Postgres SKIP LOCKED
+>   worker** (zero new infra) — never inline-on-request. (D1/D2)
+> - **Auth (§1):** Clerk is the *Premium* default; auth is a seam `KG_AUTH=none|local|clerk` so
+>   Community runs without a paid SaaS. The day-1 work is the `user_id` chokepoint, absent today. (D3)
+> - **Embeddings:** the Voyage-1024 hard-commit is **rejected** — embedder is an eval-gated seam with
+>   one shared default chosen by a recall@20 bake-off. (D4)
+> - **Batches API (§2.7):** **deferred** behind `KG_BULK_LANE=sync|batch`; ship the rate-governed
+>   sync fast-lane + spend ceiling first. (D5)
+> - **RLS (§3):** **re-sequenced** — `user_id` chokepoint + cross-tenant leak test land *before* RLS;
+>   RLS is Premium-only fail-closed insurance with an airtight `SET LOCAL`-in-txn invariant. (D6)
+> - **Feedback spine:** elevated to a day-1 append-only event log keyed to the stable pair+abstraction
+>   (not a FK to the version-bound connection row). The moat — cannot be backfilled. (D7)
+> - **Observability (§1, §8):** right-sized to Postgres `stage_events` + Sentry day 1; OTel/Logfire
+>   **deferred** behind `KG_OBSERVABILITY=postgres|otel`. (D9)
+>
+> Package choices and the patterns in §3/§5 below remain valid; the edition-default and sequencing
+> calls above are the corrections.
 
 ---
 
