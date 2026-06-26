@@ -103,7 +103,68 @@ def test_fake_surfaced_counts_are_not_uniform() -> None:
     assert all("fake" not in c.statement.lower() for c in conns)
 
 
+def test_topical_vector_cached_by_content_hash() -> None:
+    # The topical vector is cached by (content_hash, embed_version), so re-ingesting the same note
+    # (shared store) does ZERO model calls — no re-embed on a read path (D8). Facets are likewise
+    # cached, so a full re-ingest is model-call-free.
+    from kg_engine.index import InMemoryVectorIndex
+    from kg_engine.store import InMemoryStore
+
+    s = Settings(provider="fake")
+    store = InMemoryStore()
+    n = Note(id="a", title="A", text="threshold cascade tipping collapse")
+
+    e1 = Engine(s, store=store, index=InMemoryVectorIndex())
+    e1.ingest([n])
+    assert store.get_topical(n.chash, s.embed_version()) is not None
+
+    e2 = Engine(s, store=store, index=InMemoryVectorIndex())
+    calls = {"embed": 0}
+    orig = e2.router.embed
+    e2.router.embed = lambda texts: (calls.__setitem__("embed", calls["embed"] + 1), orig(texts))[1]  # type: ignore[assignment]
+    e2.ingest([n])
+    assert calls["embed"] == 0, "facets + topical must come from cache; no re-embed on re-ingest"
+    assert e2._topical["a"] == e1._topical["a"]
+
+
+def test_topical_cache_survives_prompt_or_threshold_change() -> None:
+    # embed_version keys ONLY on the embedder, so a q_threshold / prompt-style change (which moves
+    # model_version) must NOT invalidate the topical cache.
+    base = Settings(provider="fake")
+    bumped = Settings(provider="fake", q_threshold=4)
+    assert base.model_version() != bumped.model_version()  # config change moved model_version
+    assert base.embed_version() == bumped.embed_version()  # but the embedder is unchanged
+
+
+def test_spend_gate_coverage_not_k() -> None:
+    # D1: adaptive-K degrades toward a floor as spend nears the ceiling, but NEVER to zero —
+    # the ceiling throttles backfill over time, it does not drop corpus coverage.
+    from kg_api.spend_gate import adaptive_k, within_ceiling
+
+    assert adaptive_k(0, 999, 20) == 20          # ceiling disabled
+    assert adaptive_k(10.0, 1.0, 20) == 20       # under 50% spend
+    assert adaptive_k(10.0, 6.0, 20) == 10       # 60% → degrade to half
+    assert adaptive_k(10.0, 9.5, 20) == 8        # ≥90% → floor (not 0)
+    assert within_ceiling(0, 999)                # disabled = always allowed
+    assert within_ceiling(10.0, 9.9)
+    assert not within_ceiling(10.0, 10.0)
+
+
 def test_eval_harness_runs() -> None:
     golden = pathlib.Path(__file__).resolve().parents[1] / "data" / "golden" / "notes.json"
     report, surfaced = run_eval(str(golden), Settings(provider="fake"))
     assert report.surfaced >= 0  # smoke: harness executes end to end
+
+
+def test_eval_reports_ann_recall_and_two_gates() -> None:
+    # B2: the report carries ANN recall@20, and the gate is two independent thresholds.
+    golden = pathlib.Path(__file__).resolve().parents[1] / "data" / "golden" / "notes.json"
+    report, _ = run_eval(str(golden), Settings(provider="fake"))
+    assert report.ann_recall_at20 is not None and 0.0 <= report.ann_recall_at20 <= 1.0
+    # the in-memory index IS exact brute force, so recall@20 must be perfect here
+    assert report.ann_recall_at20 == 1.0
+    # two-gate logic: a clean run passes; tightening either gate past the result fails it
+    clean = run_eval(str(golden), Settings(provider="fake"))[0]
+    assert clean.gate_passed(recall_floor=0.0, garbage_ceiling=clean.garbage_surfaced)
+    assert not clean.gate_passed(recall_floor=1.1)  # impossible recall floor → fails
+    assert not clean.gate_passed(garbage_ceiling=-1)  # impossible garbage ceiling → fails

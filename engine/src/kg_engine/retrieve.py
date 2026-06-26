@@ -49,7 +49,8 @@ def candidates_for_note(
             # (d) reject same-topic pairs using the inverse of topical similarity
             if _cos(a_topical, topical_vecs[nb_id]) >= settings.topical_reject:
                 continue
-            key = tuple(sorted((note_id, nb_id)))
+            lo, hi = sorted((note_id, nb_id))
+            key = (lo, hi)
             prev = out.get(key)
             if prev is None or sim > prev.sim:
                 out[key] = Candidate(

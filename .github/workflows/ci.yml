@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+defaults:
+  run:
+    working-directory: engine
+
+jobs:
+  # Fast lane: lint + types + infra-free fake-provider tests + the eval gate.
+  fast:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv pip install --system -e ".[postgres,api,worker,dev]"
+      - name: ruff
+        run: ruff check src/ tests/
+      - name: mypy (engine core)
+        run: mypy
+      - name: pytest (fake provider, no infra)
+        run: pytest -q
+      - name: eval gate (fake wiring smoke + two-threshold gate)
+        run: kg-engine eval
+
+  # Integration lane: real Postgres + pgvector — HNSW recall, dedup, tenancy leak, migrations.
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: pg
+          POSTGRES_DB: kg
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://postgres:pg@localhost:5432/kg
+      KG_EMBED_DIM: "96"
+      KG_STORE_BACKEND: postgres
+      KG_PROVIDER: fake
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv pip install --system -e ".[postgres,api,worker,dev]"
+      - name: migrate
+        run: alembic upgrade head
+      - name: integration tests (pg backend, api, cross-tenant leak)
+        run: pytest -q tests/test_pg_backend.py tests/test_api_pg.py tests/integration

@@ -13,7 +13,8 @@ dependencies = [
 postgres = ["psycopg[binary,pool]>=3.2", "pgvector>=0.3", "alembic>=1.13", "SQLAlchemy>=2.0"]
 anthropic = ["anthropic>=0.40"]
 api = ["fastapi>=0.115", "uvicorn[standard]>=0.30"]
-dev = ["pytest>=8.0", "ruff>=0.4"]
+worker = ["dramatiq[redis]>=1.17"]
+dev = ["pytest>=8.0", "ruff>=0.4", "mypy>=1.11"]
 
 [project.scripts]
 kg-engine = "kg_engine.cli:main"
@@ -27,3 +28,18 @@ where = ["src"]
 
 [tool.ruff]
 line-length = 100
+
+[tool.ruff.lint]
+select = ["F", "I", "UP"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+# strict on the engine core; the api/worker glue is checked but not strict yet
+files = ["src/kg_engine"]
+disallow_untyped_defs = false
+warn_unused_ignores = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]

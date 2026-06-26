@@ -64,6 +64,7 @@ class Engine:
         self._facets: dict[str, list[Facet]] = {}
         self._topical: dict[str, list[float]] = {}
         self.mv = self.settings.model_version()
+        self.ev = self.settings.embed_version()
 
     # -- ingest -------------------------------------------------------------
 
@@ -83,7 +84,15 @@ class Engine:
                 self.store.put_facets(note.chash, self.mv, facets)
 
             self._facets[note.id] = facets
-            self._topical[note.id] = self.router.embed([note.text])[0]
+
+            # Topical vector is cached by (content_hash, embed_version) so it is computed once —
+            # never re-embedded on a read path nor when only a reason/verify prompt changes (D8).
+            topical = self.store.get_topical(note.chash, self.ev)
+            if topical is None:
+                topical = self.router.embed([note.text])[0]
+                self.store.put_topical(note.chash, self.ev, topical)
+            self._topical[note.id] = topical
+
             for f in facets:
                 self.index.add(f.type, note.id, f.idx, f.salience, f.facet_vec)
 
@@ -96,7 +105,8 @@ class Engine:
                 note_id, facets, self.index, self._topical, self.settings
             )
             for cand in cands:
-                if self.store.seen_pair(cand.a_id, cand.b_id, self.mv):
+                # Claim the pair in the data layer; skip if another pass already judged it.
+                if not self.store.mark_seen(cand.a_id, cand.b_id, self.mv):
                     continue
                 self._fill_neighbor_abstraction(cand)
                 conn = self._judge(cand)

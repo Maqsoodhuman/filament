@@ -10,7 +10,6 @@ runs with no infra; set KG_PROVIDER=ollama for real local models.
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 from pathlib import Path
 

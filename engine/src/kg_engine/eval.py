@@ -23,6 +23,46 @@ def _key(a: str, b: str) -> tuple[str, str]:
     return tuple(sorted((a, b)))  # type: ignore[return-value]
 
 
+def _ann_recall_at20(engine, k: int = 20) -> float | None:
+    """Mean recall@k of the engine's ANN index vs a brute-force exact-cosine top-k, per facet,
+    within each facet_type. Biased-for-recall is the moat (topically-distant structural matches),
+    so a drop here is a silent precision killer (HNSW post-filter under-return). Reported by the
+    eval gate alongside precision/garbage."""
+    import numpy as np
+
+    by_type: dict[str, list[tuple[str, int, np.ndarray]]] = {}
+    for nid, facets in engine._facets.items():
+        for f in facets:
+            if f.facet_vec:
+                by_type.setdefault(f.type, []).append(
+                    (nid, f.idx, np.asarray(f.facet_vec, dtype=np.float32))
+                )
+
+    recalls: list[float] = []
+    for ftype, entries in by_type.items():
+        if len(entries) < 2:
+            continue
+        mat = np.vstack([e[2] for e in entries])
+        norms = np.linalg.norm(mat, axis=1, keepdims=True)
+        norms[norms == 0] = 1.0
+        matn = mat / norms
+        for nid, _idx, vec in entries:
+            q = vec / (float(np.linalg.norm(vec)) or 1.0)
+            order = np.argsort(-(matn @ q))
+            brute_top = set(
+                [(entries[i][0], entries[i][1]) for i in order if entries[i][0] != nid][:k]
+            )
+            if not brute_top:
+                continue
+            got = {
+                (n, fi)
+                for (n, fi, _s) in engine.index.query(ftype, list(vec), k + 1)
+                if n != nid
+            }
+            recalls.append(len(brute_top & got) / len(brute_top))
+    return sum(recalls) / len(recalls) if recalls else None
+
+
 @dataclass
 class EvalReport:
     surfaced: int
@@ -31,14 +71,23 @@ class EvalReport:
     garbage_surfaced: int
     labeled_surfaced: int
     precision: float | None
+    ann_recall_at20: float | None = None  # ANN vs brute-force recall — the moat's retrieval guard
+
+    def gate_passed(self, recall_floor: float = 0.5, garbage_ceiling: int = 0) -> bool:
+        """Two INDEPENDENT gates (a single precision number hides regressions): enough genuine
+        pairs recalled AND garbage held at/below the ceiling. Used by the CI deploy gate."""
+        recall = (self.genuine_recalled / self.genuine_total) if self.genuine_total else 1.0
+        return recall >= recall_floor and self.garbage_surfaced <= garbage_ceiling
 
     def render(self) -> str:
         prec = "n/a" if self.precision is None else f"{self.precision * 100:.0f}%"
+        ann = "n/a" if self.ann_recall_at20 is None else f"{self.ann_recall_at20 * 100:.0f}%"
         return (
             f"surfaced={self.surfaced}  "
             f"genuine recalled={self.genuine_recalled}/{self.genuine_total}  "
             f"garbage surfaced={self.garbage_surfaced}  "
-            f"precision(on labeled)={prec}"
+            f"precision(on labeled)={prec}  "
+            f"ANN recall@20={ann}"
         )
 
 
@@ -65,5 +114,6 @@ def run_eval(path: str, settings: Settings | None = None) -> tuple[EvalReport, l
         garbage_surfaced=garbage_hit,
         labeled_surfaced=labeled_hit,
         precision=precision,
+        ann_recall_at20=_ann_recall_at20(engine),
     )
     return report, surfaced

@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass, field
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 def content_hash(text: str) -> str:
@@ -14,19 +14,25 @@ def content_hash(text: str) -> str:
 
 
 # ---- LLM output schemas (validated at the provider boundary) ----
+# extra='forbid' (C1): a hallucinated field fails validation instead of vanishing silently
+# (pydantic v2 defaults to extra='ignore'). The FakeProvider must emit objects that validate
+# against these exact shapes, which turns it into a contract test for the prompts/schemas.
 
 
 class FacetOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     type: str
     abstraction: str = Field(description="domain-stripped statement of the structure")
     salience: float = Field(ge=0.0, le=1.0)
 
 
 class ExtractionOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     facets: list[FacetOut] = Field(default_factory=list)
 
 
 class ReasonOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     connection: bool
     shared_structure: str = ""
     why: str = ""
@@ -34,6 +40,7 @@ class ReasonOut(BaseModel):
 
 
 class VerifyOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     validity: int = Field(ge=1, le=5)
     nonobviousness: int = Field(ge=1, le=5)
     generic: bool = False

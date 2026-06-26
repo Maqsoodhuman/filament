@@ -44,13 +44,25 @@ class ModelRouter:
         return table[(p, role)]
 
     def extract(self, system: str, user: str) -> dict:
-        return self._provider.chat_json(system, user, self._model("extract"))
+        from .models import ExtractionOut
+
+        return self._provider.chat_json(
+            system, user, self._model("extract"), ExtractionOut.model_json_schema()
+        )
 
     def reason(self, system: str, user: str) -> dict:
-        return self._provider.chat_json(system, user, self._model("reason"))
+        from .models import ReasonOut
+
+        return self._provider.chat_json(
+            system, user, self._model("reason"), ReasonOut.model_json_schema()
+        )
 
     def verify(self, system: str, user: str) -> dict:
-        return self._provider.chat_json(system, user, self._model("verify"))
+        from .models import VerifyOut
+
+        return self._provider.chat_json(
+            system, user, self._model("verify"), VerifyOut.model_json_schema()
+        )
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         model = "fake" if self.s.provider == "fake" else self.s.embed_model

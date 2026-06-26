@@ -23,12 +23,12 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .models import Facet
-
 # psycopg + pgvector are optional (the [postgres] extra). Import lazily-friendly but at module
 # load so a misconfigured backend fails loudly rather than silently degrading.
 import psycopg
 from pgvector.psycopg import register_vector
+
+from .models import Facet
 
 # A generous default bound for neighbors_within's ANN scan; the in-memory version is exact, so we
 # pull enough candidates that the threshold filter matches in-memory behavior on realistic corpora.
@@ -73,11 +73,45 @@ class PgStore:
                 (chash, model_version, payload),
             )
 
+    # -- topical-vector cache: keyed by (content_hash, embed_version) -------
+
+    def get_topical(self, chash: str, embed_version: str) -> list[float] | None:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                "SELECT vec FROM topical_cache WHERE content_hash = %s AND embed_version = %s",
+                (chash, embed_version),
+            )
+            row = cur.fetchone()
+        # register_vector returns the column as a numpy array; hand back a plain list[float]
+        # so the engine sees identical types from both backends.
+        return [float(x) for x in row[0]] if row is not None else None
+
+    def put_topical(self, chash: str, embed_version: str, vec: list[float]) -> None:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO topical_cache (content_hash, embed_version, vec)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (content_hash, embed_version) DO UPDATE SET vec = EXCLUDED.vec
+                """,
+                (chash, embed_version, _to_vec(vec)),
+            )
+
     # -- lifetime per-pair dedup --------------------------------------------
 
-    def seen_pair(self, a_id: str, b_id: str, model_version: str) -> bool:
-        """Atomically claim a pair: returns True if it was already judged this model_version.
-        Normalizes (a,b) so order does not matter, matching the in-memory set semantics."""
+    def is_seen(self, a_id: str, b_id: str, model_version: str) -> bool:
+        """Pure read: has this pair already been judged for this model_version? No mutation."""
+        lo, hi = sorted((a_id, b_id))
+        with self._conn.cursor() as cur:
+            cur.execute(
+                "SELECT 1 FROM pair_dedup WHERE a_id = %s AND b_id = %s AND model_version = %s",
+                (lo, hi, model_version),
+            )
+            return cur.fetchone() is not None
+
+    def mark_seen(self, a_id: str, b_id: str, model_version: str) -> bool:
+        """Atomically claim a pair. Returns True if newly claimed (caller should judge it),
+        False if it was already seen (caller no-ops). Normalizes (a,b) so order does not matter."""
         lo, hi = sorted((a_id, b_id))
         with self._conn.cursor() as cur:
             cur.execute(
@@ -88,8 +122,8 @@ class PgStore:
                 """,
                 (lo, hi, model_version),
             )
-            # rowcount == 0 means the row already existed -> the pair was seen before.
-            return cur.rowcount == 0
+            # rowcount == 1 means the row was newly inserted -> this caller claimed the pair.
+            return cur.rowcount == 1
 
 
 @dataclass
@@ -164,7 +198,7 @@ class PgVectorIndex:
                 (q, facet_type, q, _NEIGHBOR_SCAN_LIMIT, max_dist),
             )
             row = cur.fetchone()
-        return int(row[0])
+        return int(row[0]) if row is not None else 0
 
 
 # -- serialization helpers ---------------------------------------------------

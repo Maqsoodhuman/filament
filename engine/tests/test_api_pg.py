@@ -44,17 +44,17 @@ def _clean_db():
 
     with psycopg.connect(_conninfo(), autocommit=True) as conn, conn.cursor() as cur:
         cur.execute("TRUNCATE api_connections, api_notes")
-        cur.execute("TRUNCATE facet_index, facet_cache, pair_dedup")
+        cur.execute("TRUNCATE facet_index, facet_cache, pair_dedup, topical_cache")
     yield
 
 
 def _fresh_client() -> TestClient:
-    """A client whose repo is rebuilt from scratch — simulates a process restart: the new repo
-    reads existing rows straight from Postgres."""
+    """A client whose repo + queue are rebuilt from scratch — simulates a process restart: the new
+    repo reads existing rows straight from Postgres."""
     import kg_api.main as main
 
     main._repo_singleton = None
-    main._engine = None
+    main._queue_singleton = None
     return TestClient(main.app)
 
 
@@ -66,12 +66,16 @@ def _create(client: TestClient, *, title: str, body: str, source: str = "authore
 
 def test_notes_and_connections_persist_across_restart() -> None:
     # Two structurally-similar, topically-distant notes -> the fake engine surfaces a connection.
+    from kg_api.main import run_worker_once
+
     with _fresh_client() as c:
         a = _create(c, title="Quorum sensing",
                     body="threshold density colony switches behavior cascade")
         b = _create(c, title="Bank runs",
                     body="threshold withdrawals confidence collapses cascade flip")
-        # connection is judged + persisted on the POST /notes write path
+        # engine runs OFF the write path: nothing is surfaced until the worker drains the queue
+        assert c.get("/connections").json() == [], "engine must not run on the HTTP write path"
+        run_worker_once()
         conns = c.get("/connections").json()
         assert len(conns) >= 1, "engine should surface at least one connection"
         before_ids = {n["id"] for n in c.get("/notes").json()}

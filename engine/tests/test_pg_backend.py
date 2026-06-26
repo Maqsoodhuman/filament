@@ -98,11 +98,13 @@ def test_pair_dedup_is_lifetime_and_order_independent(store) -> None:
     a, b = "a_" + uuid.uuid4().hex, "b_" + uuid.uuid4().hex
     mv = "mv_" + uuid.uuid4().hex
 
-    assert store.seen_pair(a, b, mv) is False  # first time: claims it
-    assert store.seen_pair(a, b, mv) is True   # already judged
-    assert store.seen_pair(b, a, mv) is True   # order does not matter
+    assert store.is_seen(a, b, mv) is False    # not yet judged
+    assert store.mark_seen(a, b, mv) is True   # first time: claims it
+    assert store.is_seen(a, b, mv) is True     # now seen (pure read, no mutation)
+    assert store.mark_seen(a, b, mv) is False  # already judged
+    assert store.mark_seen(b, a, mv) is False  # order does not matter
     # a different model_version is a fresh judgment window
-    assert store.seen_pair(a, b, "mv_fresh") is False
+    assert store.mark_seen(a, b, "mv_fresh") is True
 
 
 def test_ann_query_finds_nearest_within_type(index) -> None:

@@ -34,6 +34,24 @@ class Settings:
     # not change pipeline behavior — it is the same store/index interface.
     store_backend: str = _env("KG_STORE_BACKEND", "memory")
     database_url: str = _env("DATABASE_URL", "")
+    # async substrate seam (D1): "memory" (in-process, dev/test) | "postgres" (SKIP LOCKED worker)
+    # | "redis" (Dramatiq distributes a drain signal; the PG jobs table is the durable outbox)
+    queue_backend: str = _env("KG_QUEUE", "memory")
+    redis_url: str = _env("KG_REDIS_URL", "redis://localhost:6379/0")
+    # auth chokepoint (D3): "none" (loopback single user) | "local" (bearer token) | "clerk" (JWT)
+    auth: str = _env("KG_AUTH", "none")
+    local_user_id: str = _env("KG_LOCAL_USER", "u_local")
+    local_token: str = _env("KG_LOCAL_TOKEN", "")
+    # observability seam (D9): "postgres" (stage_events table) | "otel" (deferred) | "off"
+    observability: str = _env("KG_OBSERVABILITY", "postgres")
+    # bulk-import lane (D1): "sync" (rate-governed fast-lane) | "batch" (Anthropic Batches, deferred)
+    bulk_lane: str = _env("KG_BULK_LANE", "sync")
+    # per-user spend ceiling in USD (0 = disabled). Throttles backfill over TIME via adaptive-K —
+    # never silently drops corpus coverage (the coverage-not-K invariant).
+    spend_ceiling_usd: float = float(_env("KG_SPEND_CEILING_USD", "0"))
+    # DB-scale seam (D2): route read-only queries here when set (replica lag is acceptable per the
+    # eventual-consistency model). Empty = single primary.
+    read_replica_url: str = _env("KG_READ_REPLICA_URL", "")
     # HNSW recall knob, honored per-query via SET LOCAL hnsw.ef_search (postgres backend only).
     ef_search: int = int(_env("KG_EF_SEARCH", "100"))
 
@@ -53,8 +71,11 @@ class Settings:
     top_k: int = int(_env("KG_TOP_K", "20"))
     q_threshold: int = int(_env("KG_Q_THRESHOLD", "3"))
     salience_floor: float = float(_env("KG_SALIENCE_FLOOR", "0.35"))
-    # reject a candidate pair whose TOPICAL embeddings are closer than this (same-topic = boring)
-    topical_reject: float = float(_env("KG_TOPICAL_REJECT", "0.82"))
+    # reject a candidate pair whose TOPICAL embeddings are closer than this (same-topic = boring).
+    # Raised 0.82→0.92 by the floor experiment (B1): 0.82 wrongly rejected metaphor-sharing
+    # cross-domain analogies (genuine recall 0/4 → 1/4, labeled precision 0%→50%, garbage flat).
+    # Final tuning belongs on the managed models (local verifiers cap the rest of the recall gap).
+    topical_reject: float = float(_env("KG_TOPICAL_REJECT", "0.92"))
     # a facet whose abstraction has more than this many tight neighbors is a generic "hub" -> quarantined
     hub_quarantine: int = int(_env("KG_HUB_QUARANTINE", "10"))
     hub_radius: float = float(_env("KG_HUB_RADIUS", "0.90"))
@@ -81,6 +102,13 @@ class Settings:
             ]
         )
         return "mv_" + hashlib.sha256(f"{models}#{self.config_hash()}".encode()).hexdigest()[:12]
+
+    def embed_version(self) -> str:
+        """Identity of the EMBEDDER only (model + dimension). The topical-vector cache keys on
+        this, NOT model_version — so a reason/verify prompt or q-threshold bump never re-embeds the
+        whole corpus (backend-guide D8). Mirrors the router's embedder selection."""
+        embedder = f"fake-{self.fake_dim}" if self.provider == "fake" else self.embed_model
+        return "emb_" + hashlib.sha256(embedder.encode()).hexdigest()[:10]
 
     def config_hash(self) -> str:
         """Hash of everything that changes engine OUTPUT besides the models/prompts: retrieval +

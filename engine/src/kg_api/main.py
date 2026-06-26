@@ -1,9 +1,12 @@
-"""FastAPI app — the 7 core endpoints (Phase 1 contract).
+"""FastAPI app — the 7 core endpoints (Phase 1 contract), now production-shaped (P0).
 
-Dev handlers use an in-memory store + the fake engine so the API runs and the OpenAPI schema is real.
-PRODUCTION (Phase 2, engine-agent): note writes persist to Postgres; "find-connections"/"scan" enqueue
-Dramatiq jobs (no LLM work on this path); the engine runs in workers. The CONTRACT (these schemas)
-does not change between dev and prod — only the handler internals do.
+Invariant: the engine NEVER runs on an HTTP request path. Handlers resolve user_id via the auth
+chokepoint (deps.get_current_user — the sole tenancy source), persist to the repo, and ENQUEUE a
+job; triggers return status="queued". A worker (kg_api.worker) drains the queue off-path and runs
+the engine. Reads serve persisted rows (no engine, no LLM/embedding).
+
+Backends are seams: KG_STORE_BACKEND (memory|postgres) and KG_QUEUE (memory|postgres). The default
+memory profile (with an embedded worker) is the dev/test path; postgres is the production target.
 """
 
 from __future__ import annotations
@@ -11,17 +14,20 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import re
+import threading
 import uuid
+from collections import Counter
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi.responses import StreamingResponse
 
-import re
-from collections import Counter
-
-from kg_api.repo import StoredConnection, make_notes_repo
+from kg_api.deps import AuthContext, get_current_user
+from kg_api.queue import make_queue
+from kg_api.repo import StoredNote, make_notes_repo
 from kg_api.schemas import (
     ClusterOut,
     ConnectionOut,
@@ -32,124 +38,120 @@ from kg_api.schemas import (
     ScanRequest,
     kind_for,
 )
+from kg_api.worker import Worker
 from kg_engine import Engine, Note, Settings
 
-# Golden set used by the optional dev seed (KG_SEED=1).
 _GOLDEN = pathlib.Path(__file__).resolve().parents[2] / "data" / "golden" / "notes.json"
 
 
-def _seed_from_golden() -> None:
-    """Dev-only seed: ingest the golden notes so a running server serves real data.
-
-    Behind KG_SEED=1, default off. Reuses the same ingest path as POST /notes so the
-    engine never forks. PROD seeding would persist to Postgres instead.
-    """
-    data = json.loads(_GOLDEN.read_text())
-    notes: list[Note] = []
-    for raw in data.get("notes", []):
-        note = Note(
-            id=raw["id"],
-            title=raw.get("title", ""),
-            text=raw["text"],
-            domain=raw.get("domain", ""),
-        )
-        _notes[note.id] = note
-        _created[note.id] = _now()
-        # Golden notes carry no tags; derive one from the domain so seeded data is real, not empty.
-        _tags[note.id] = [note.domain] if note.domain else []
-        notes.append(note)
-    if notes:
-        _eng().ingest(notes)
-
-
-@asynccontextmanager
-async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    if os.getenv("KG_SEED") == "1":
-        _seed_from_golden()
-    yield
-
-
-app = FastAPI(title="Knowledge Graph API", version="0.1.0", lifespan=lifespan)
-
-# --- in-memory state (default dev/demo path; unchanged from v0) -------------
-# When KG_STORE_BACKEND=postgres these globals stay empty and the Postgres branch (below) runs
-# instead — notes + surfaced connections persist via kg_api.repo.PgNotesRepo and survive restart.
-_notes: dict[str, Note] = {}
-_created: dict[str, str] = {}
-_tags: dict[str, list[str]] = {}  # note_id -> hashtags (API-layer metadata; not engine input)
-_jobs: dict[str, JobOut] = {}
-_engine: Engine | None = None
-
-
 def _settings() -> Settings:
-    return Settings()  # provider + store_backend from env
+    return Settings()
 
 
-def _pg_mode() -> bool:
-    return _settings().store_backend == "postgres"
+def _now() -> str:
+    return datetime.now(UTC).isoformat()
 
 
-# --- Postgres-mode helpers (only used when KG_STORE_BACKEND=postgres) --------
+# --- process singletons (repo + queue), resettable in tests ------------------
 _repo_singleton = None
+_queue_singleton = None
 
 
 def _repo():
-    """The API persistence repo (Postgres-backed in pg mode). Lazily built so a fresh process
-    reads existing rows straight from the DB — that is what makes the API stateful."""
     global _repo_singleton
     if _repo_singleton is None:
         _repo_singleton = make_notes_repo(_settings())
     return _repo_singleton
 
 
-def _pg_engine() -> Engine:
-    """Build an engine hydrated with every persisted note, on the configured engine backend.
-
-    The engine's own caches (facets/topical/index) are not the API's source of record — notes and
-    surfaced connections are (the repo). So a fresh process re-ingests the persisted notes into a
-    new engine before running connections. The facet cache + pgvector index make re-ingest cheap
-    and never re-bills extraction (cached by content_hash, model_version)."""
-    eng = Engine(_settings())
-    eng.ingest(_repo().all_notes())
-    return eng
+def _queue():
+    global _queue_singleton
+    if _queue_singleton is None:
+        _queue_singleton = make_queue(_settings())
+    return _queue_singleton
 
 
-def _eng() -> Engine:
-    global _engine
-    if _engine is None:
-        _engine = Engine(_settings())  # provider from env; fake by default
-    return _engine
+def _worker() -> Worker:
+    return Worker(_settings(), _queue(), _repo())
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+def run_worker_once(limit: int = 50) -> int:
+    """Drain the queue synchronously. Used by the live embedded worker and by tests (the engine
+    still runs OFF the request handler — this is the worker, not a route)."""
+    return _worker().run_once(limit)
 
 
-def _surfaced() -> list:
-    """Idempotent surfacing for the dev in-memory handlers.
-
-    `Engine.find_connections()` mutates the in-memory dedup set (`seen_pair` marks each pair
-    judged), so calling `surfaced()` twice in one process drops every pair on the second pass.
-    Read endpoints must be idempotent across requests, so reset the dedup view before each
-    surfacing pass. PROD reads persisted `connections` rows instead of re-judging — also idempotent.
-    """
-    eng = _eng()
-    eng.store._judged_pairs.clear()
-    return eng.surfaced()
+def _enqueue(user_id: str, job_type: str, note_id: str | None, *, stable: bool) -> str:
+    mv = _settings().model_version()
+    if stable and note_id is not None:
+        idem = f"{job_type}:{user_id}:{note_id}:{mv}"  # double-click collapses to one job
+    else:
+        idem = f"{job_type}:{user_id}:{uuid.uuid4().hex}"  # always a fresh job (e.g. scan)
+    return _queue().enqueue(user_id, job_type, {"note_id": note_id}, idem).job_id
 
 
-def _note_out(n: Note) -> NoteOut:
-    eng = _eng()
-    count = sum(
-        1
-        for c in _surfaced()
-        if c.a_id == n.id or c.b_id == n.id
-    ) if n.id in eng._facets else 0
+# --- lifespan: optional dev seed + optional embedded worker thread -----------
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    if os.getenv("KG_SEED") == "1":
+        _seed_from_golden()
+    stop = threading.Event()
+    thread: threading.Thread | None = None
+    if os.getenv("KG_EMBEDDED_WORKER") == "1":
+        # Dev single-process convenience: drain the in-process queue in a background thread.
+        # Still OFF the request handler. PROD runs `python -m kg_api.worker` as a separate process.
+        thread = threading.Thread(target=_worker().run_forever, kwargs={"stop": stop}, daemon=True)
+        thread.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        if thread is not None:
+            thread.join(timeout=2.0)
+
+
+def _seed_from_golden() -> None:
+    """Dev-only seed (KG_SEED=1): persist the golden notes for the local user + enqueue connect
+    jobs, reusing the same path as POST /notes so the engine never forks."""
+    uid = _settings().local_user_id
+    data = json.loads(_GOLDEN.read_text())
+    repo = _repo()
+    for raw in data.get("notes", []):
+        note = Note(id=raw["id"], title=raw.get("title", ""), text=raw["text"],
+                    domain=raw.get("domain", ""))
+        tags = [note.domain] if note.domain else []
+        repo.add_note(uid, note, tags)
+        _enqueue(uid, "connect_note", note.id, stable=True)
+
+
+app = FastAPI(title="Knowledge Graph API", version="0.1.0", lifespan=lifespan)
+
+
+# --- output mappers ----------------------------------------------------------
+
+
+def _note_out(repo, stored: StoredNote) -> NoteOut:
+    n = stored.note
+    count = len(repo.list_connections(stored.user_id, n.id))
     return NoteOut(
         id=n.id, title=n.title, body=n.text, source=n.domain or "authored",
-        created_at=_created.get(n.id, _now()), connection_count=count,
-        tags=_tags.get(n.id, []),
+        created_at=stored.created_at, connection_count=count, tags=stored.tags,
     )
+
+
+def _conn_out(c) -> ConnectionOut:
+    # Works for kg_engine.Connection and repo.StoredConnection (same field surface + .q).
+    return ConnectionOut(
+        id="c_" + (c.a_id + c.b_id)[:16],
+        a_id=c.a_id, b_id=c.b_id, a_title=c.a_title, b_title=c.b_title,
+        facet_type=c.facet_type, kind=kind_for(c.facet_type),
+        statement=c.statement, validity=c.validity, nonobviousness=c.nonobviousness, q=c.q,
+    )
+
+
+# --- endpoints ---------------------------------------------------------------
 
 
 @app.get("/health")
@@ -158,120 +160,84 @@ def health() -> dict[str, str]:
 
 
 @app.post("/notes", response_model=NoteOut, status_code=201)
-def create_note(payload: NoteCreate) -> NoteOut:
+def create_note(payload: NoteCreate, ctx: AuthContext = Depends(get_current_user)) -> NoteOut:
     nid = "n_" + uuid.uuid4().hex[:10]
     note = Note(id=nid, title=payload.title, text=payload.body, domain=payload.source)
-    if _pg_mode():
-        return _pg_create_note(note, payload.tags)
-    _notes[nid] = note
-    _created[nid] = _now()
-    _tags[nid] = payload.tags  # API-layer metadata; the engine never sees tags
-    _eng().ingest([note])  # dev: ingest inline. PROD: enqueue.
-    return _note_out(note)
-
-
-def _pg_create_note(note: Note, tags: list[str]) -> NoteOut:
-    """Persist the note, run the engine over the full persisted corpus, persist surfaced
-    connections. The engine runs HERE on the write path (no Redis/Dramatiq this round); reads stay
-    LLM-free. When the async queue lands, this body moves into a worker and the handler enqueues."""
     repo = _repo()
-    stored = repo.add_note(note, tags)
-    eng = _pg_engine()  # hydrated with all persisted notes (incl. this one)
-    repo.upsert_connections(eng.surfaced())
-    return _pg_note_out(repo, stored)
-
-
-def _pg_note_out(repo, stored) -> NoteOut:
-    count = len(repo.list_connections(stored.note.id))
-    n = stored.note
-    return NoteOut(
-        id=n.id, title=n.title, body=n.text, source=n.domain or "authored",
-        created_at=stored.created_at, connection_count=count,
-        tags=stored.tags,
-    )
+    stored = repo.add_note(ctx.user_id, note, payload.tags)
+    # No engine on the write path — enqueue and let the worker connect this note.
+    _enqueue(ctx.user_id, "connect_note", nid, stable=True)
+    return _note_out(repo, stored)
 
 
 @app.get("/notes", response_model=list[NoteOut])
-def list_notes() -> list[NoteOut]:
-    if _pg_mode():
-        repo = _repo()
-        return [_pg_note_out(repo, s) for s in repo.list_notes()]
-    return [_note_out(n) for n in sorted(_notes.values(), key=lambda x: _created.get(x.id, ""), reverse=True)]
+def list_notes(ctx: AuthContext = Depends(get_current_user)) -> list[NoteOut]:
+    repo = _repo()
+    return [_note_out(repo, s) for s in repo.list_notes(ctx.user_id)]
 
 
 @app.get("/notes/{note_id}", response_model=NoteDetail)
-def get_note(note_id: str) -> NoteDetail:
-    if _pg_mode():
-        repo = _repo()
-        stored = repo.get_note(note_id)
-        if stored is None:
-            raise HTTPException(404, "note not found")
-        conns = [_conn_out(c) for c in repo.list_connections(note_id)]
-        return NoteDetail(note=_pg_note_out(repo, stored), connections=conns)
-    n = _notes.get(note_id)
-    if n is None:
+def get_note(note_id: str, ctx: AuthContext = Depends(get_current_user)) -> NoteDetail:
+    repo = _repo()
+    stored = repo.get_note(ctx.user_id, note_id)
+    if stored is None:
         raise HTTPException(404, "note not found")
-    conns = [_conn_out(c) for c in _surfaced() if c.a_id == note_id or c.b_id == note_id]
-    return NoteDetail(note=_note_out(n), connections=conns)
+    conns = [_conn_out(c) for c in repo.list_connections(ctx.user_id, note_id)]
+    return NoteDetail(note=_note_out(repo, stored), connections=conns)
 
 
 @app.post("/notes/{note_id}/find-connections", response_model=JobOut)
-def find_connections(note_id: str) -> JobOut:
-    if _pg_mode():
-        repo = _repo()
-        if repo.get_note(note_id) is None:
-            raise HTTPException(404, "note not found")
-        # No LLM on a read path: connections were judged + persisted at POST /notes; report the
-        # persisted count. (When the async queue lands this enqueues a scoped re-judge.)
-        surfaced = repo.list_connections(note_id)
-        job = JobOut(job_id="j_" + uuid.uuid4().hex[:10], status="done", surfaced_count=len(surfaced))
-        _jobs[job.job_id] = job
-        return job
-    if note_id not in _notes:
+def find_connections(note_id: str, ctx: AuthContext = Depends(get_current_user)) -> JobOut:
+    if _repo().get_note(ctx.user_id, note_id) is None:
         raise HTTPException(404, "note not found")
-    # PROD: enqueue a scoped job and return queued. DEV: run inline and report done.
-    surfaced = [c for c in _surfaced() if c.a_id == note_id or c.b_id == note_id]
-    job = JobOut(job_id="j_" + uuid.uuid4().hex[:10], status="done", surfaced_count=len(surfaced))
-    _jobs[job.job_id] = job
-    return job
+    job_id = _enqueue(ctx.user_id, "connect_note", note_id, stable=True)
+    job = _queue().get(job_id)
+    return JobOut(job_id=job_id, status=job.status, surfaced_count=job.surfaced_count)
 
 
 @app.post("/scan", response_model=JobOut)
-def scan(_req: ScanRequest) -> JobOut:
-    if _pg_mode():
-        repo = _repo()
-        # Re-run the engine over the full persisted corpus and persist the surfaced connections.
-        eng = _pg_engine()
-        surfaced = eng.surfaced()
-        repo.upsert_connections(surfaced)
-        job = JobOut(job_id="j_" + uuid.uuid4().hex[:10], status="done", surfaced_count=len(surfaced))
-        _jobs[job.job_id] = job
-        return job
-    surfaced = _surfaced()
-    job = JobOut(job_id="j_" + uuid.uuid4().hex[:10], status="done", surfaced_count=len(surfaced))
-    _jobs[job.job_id] = job
-    return job
+def scan(_req: ScanRequest, ctx: AuthContext = Depends(get_current_user)) -> JobOut:
+    job_id = _enqueue(ctx.user_id, "scan", None, stable=False)
+    job = _queue().get(job_id)
+    return JobOut(job_id=job_id, status=job.status, surfaced_count=job.surfaced_count)
 
 
 @app.get("/connections", response_model=list[ConnectionOut])
-def list_connections(note_id: str | None = None) -> list[ConnectionOut]:
-    if _pg_mode():
-        return [_conn_out(c) for c in _repo().list_connections(note_id)]
-    out = []
-    for c in _surfaced():
-        if note_id and not (c.a_id == note_id or c.b_id == note_id):
-            continue
-        out.append(_conn_out(c))
-    return out
+def list_connections(
+    note_id: str | None = None, ctx: AuthContext = Depends(get_current_user)
+) -> list[ConnectionOut]:
+    return [_conn_out(c) for c in _repo().list_connections(ctx.user_id, note_id)]
 
 
 @app.get("/jobs/{job_id}", response_model=JobOut)
-def get_job(job_id: str) -> JobOut:
-    job = _jobs.get(job_id)
-    if job is None:
+def get_job(job_id: str, ctx: AuthContext = Depends(get_current_user)) -> JobOut:
+    job = _queue().get(job_id)
+    if job is None or job.user_id != ctx.user_id:
         raise HTTPException(404, "job not found")
-    return job
+    return JobOut(job_id=job.job_id, status=job.status, surfaced_count=job.surfaced_count)
 
+
+@app.get("/jobs/{job_id}/stream")
+async def stream_job(job_id: str, ctx: AuthContext = Depends(get_current_user)) -> StreamingResponse:
+    """Real-time progress (A3): Server-Sent Events streaming the job's status until done/error, so
+    the import/scan UI shows live progress instead of polling. One-way → SSE, not WebSockets."""
+    import asyncio
+
+    async def events() -> AsyncIterator[str]:
+        for _ in range(1200):  # ~2 min ceiling
+            job = _queue().get(job_id)
+            if job is None or job.user_id != ctx.user_id:
+                yield f"data: {json.dumps({'status': 'error'})}\n\n"
+                return
+            yield f"data: {json.dumps({'status': job.status, 'surfaced_count': job.surfaced_count})}\n\n"
+            if job.status in ("done", "error"):
+                return
+            await asyncio.sleep(0.1)
+
+    return StreamingResponse(events(), media_type="text/event-stream")
+
+
+# --- clusters (Organize tab) -------------------------------------------------
 
 _STOP = {"with", "from", "that", "this", "into", "their", "your", "about", "which", "where",
          "the", "and", "for", "are", "was", "its", "out", "not", "you", "they", "once"}
@@ -279,7 +245,7 @@ _STOP = {"with", "from", "that", "this", "into", "their", "your", "about", "whic
 
 def _label(notes: list[Note]) -> str:
     """Cheap section label = most frequent salient word across member titles (PROD: a Haiku call)."""
-    words = Counter()
+    words: Counter[str] = Counter()
     for n in notes:
         for w in re.findall(r"[a-zA-Z]{5,}", (n.title + " " + n.text).lower()):
             if w not in _STOP:
@@ -288,18 +254,25 @@ def _label(notes: list[Note]) -> str:
     return " · ".join(w.capitalize() for w in top) if top else "Notes"
 
 
-def _kmeans(ids: list[str], vecs: "list", k: int, iters: int = 12) -> dict[int, list[str]]:
+_BAND = 0.92  # multi-section membership: join any section whose centroid is within band*best
+
+# Persisted cluster state per user so the Organize view is STABLE: a new note is assigned to an
+# existing section incrementally (default); a full re-cluster only runs on the explicit trigger.
+# In-memory here (dev); the Postgres target persists to note_clusters (follow-up).
+_cluster_state: dict[str, dict] = {}
+
+
+def _cluster_full(ids: list[str], vecs, k: int, iters: int = 12):
+    """Full k-means + multi-section membership. Returns (centroids, membership{idx:[ids]})."""
     import numpy as np
 
     x = np.asarray(vecs, dtype=np.float32)
     x = x / (np.linalg.norm(x, axis=1, keepdims=True) + 1e-9)
-    # deterministic seeding: farthest-point init from the first note
     centers = [0]
     while len(centers) < k:
         d = 1 - (x @ x[centers].T).max(axis=1)
         centers.append(int(np.argmax(d)))
     c = x[centers].copy()
-    assign = np.zeros(len(x), dtype=int)
     for _ in range(iters):
         assign = np.argmax(x @ c.T, axis=1)
         for j in range(k):
@@ -307,47 +280,75 @@ def _kmeans(ids: list[str], vecs: "list", k: int, iters: int = 12) -> dict[int, 
             if len(m):
                 c[j] = m.mean(axis=0)
                 c[j] /= np.linalg.norm(c[j]) + 1e-9
-    out: dict[int, list[str]] = {}
-    for nid, a in zip(ids, assign):
-        out.setdefault(int(a), []).append(nid)
-    return out
+    sims = x @ c.T
+    best = sims.max(axis=1)
+    membership: dict[int, list[str]] = {}
+    for i, nid in enumerate(ids):
+        for j in range(len(c)):
+            if sims[i, j] >= _BAND * best[i]:
+                membership.setdefault(j, []).append(nid)
+        if not any(nid in g for g in membership.values()):
+            membership.setdefault(int(np.argmax(sims[i])), []).append(nid)
+    return c, membership
+
+
+def _assign_incremental(centroids, vec) -> list[int]:
+    """Assign one note to its nearest existing section(s) — no re-clustering, so sections stay put."""
+    import numpy as np
+
+    v = np.asarray(vec, dtype=np.float32)
+    v = v / (np.linalg.norm(v) + 1e-9)
+    sims = centroids @ v
+    best = float(sims.max())
+    js = [j for j in range(len(centroids)) if float(sims[j]) >= _BAND * best]
+    return js or [int(np.argmax(sims))]
 
 
 @app.get("/clusters", response_model=list[ClusterOut])
-def list_clusters() -> list[ClusterOut]:
-    """Organize tab: cluster topical embeddings into themed sections (k-means over the vectors
-    the engine already computes). DEV baseline; PROD swaps in HDBSCAN + Haiku labels + multi-section
-    membership. Robust to connection density (unlike a connection-graph component approach)."""
-    if _pg_mode():
-        eng = _pg_engine()  # hydrates topical vectors for the persisted notes
-        notes_by_id = {n.id: n for n in _repo().all_notes()}
-    else:
-        eng = _eng()
-        notes_by_id = _notes
+def list_clusters(
+    recluster: bool = Query(False),
+    ctx: AuthContext = Depends(get_current_user),
+) -> list[ClusterOut]:
+    """Organize sections (topical k-means). DEFAULT is INCREMENTAL: a new note is assigned to its
+    nearest existing section so the view stays stable (existing sections + labels don't move).
+    `recluster=true` rebuilds sections from scratch — the explicit "Re-cluster" action. Topical
+    vectors are cache-backed (P0-3), so no embedding call happens here."""
+    repo = _repo()
+    notes = repo.all_notes(ctx.user_id)
+    if not notes:
+        return []
+    eng = Engine(_settings())
+    eng.ingest(notes)
+    notes_by_id = {n.id: n for n in notes}
     ids = [nid for nid in notes_by_id if nid in eng._topical]
     if not ids:
         return []
-    k = max(1, min(4, len(ids)))
-    groups = _kmeans(ids, [eng._topical[nid] for nid in ids], k)
-    clusters = []
-    for i, (_g, gids) in enumerate(sorted(groups.items(), key=lambda kv: -len(kv[1]))):
-        members = [notes_by_id[nid] for nid in gids]
-        clusters.append(
-            ClusterOut(
-                id=f"cl_{i}",
-                label=_label(members) if len(members) > 1 else members[0].title,
-                note_ids=gids,
-                note_count=len(gids),
-            )
+
+    state = _cluster_state.get(ctx.user_id)
+    if recluster or state is None:
+        k = max(1, min(4, len(ids)))
+        centroids, membership = _cluster_full(ids, [eng._topical[i] for i in ids], k)
+        labels = {
+            j: (_label([notes_by_id[x] for x in m]) if len(m) > 1 else notes_by_id[m[0]].title)
+            for j, m in membership.items()
+        }
+        state = {"centroids": centroids, "membership": membership, "labels": labels, "seen": set(ids)}
+        _cluster_state[ctx.user_id] = state
+    else:
+        # incremental: only notes not seen before join their nearest section; labels stay fixed
+        for nid in [i for i in ids if i not in state["seen"]]:
+            for j in _assign_incremental(state["centroids"], eng._topical[nid]):
+                state["membership"].setdefault(j, []).append(nid)
+            state["seen"].add(nid)
+
+    out = []
+    for j, gids in sorted(state["membership"].items(), key=lambda kv: -len(kv[1])):
+        present = [g for g in gids if g in notes_by_id]
+        if not present:
+            continue
+        label = state["labels"].get(j) or (
+            _label([notes_by_id[x] for x in present]) if len(present) > 1
+            else notes_by_id[present[0]].title
         )
-    return clusters
-
-
-def _conn_out(c) -> ConnectionOut:
-    # Works for both kg_engine.Connection and repo.StoredConnection (same field surface + .q).
-    return ConnectionOut(
-        id="c_" + (c.a_id + c.b_id)[:16],
-        a_id=c.a_id, b_id=c.b_id, a_title=c.a_title, b_title=c.b_title,
-        facet_type=c.facet_type, kind=kind_for(c.facet_type),
-        statement=c.statement, validity=c.validity, nonobviousness=c.nonobviousness, q=c.q,
-    )
+        out.append(ClusterOut(id=f"cl_{j}", label=label, note_ids=present, note_count=len(present)))
+    return out

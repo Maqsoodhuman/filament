@@ -47,7 +47,7 @@ class NoteOut(BaseModel):
 
 class NoteDetail(BaseModel):
     note: NoteOut
-    connections: list["ConnectionOut"] = Field(default_factory=list)
+    connections: list[ConnectionOut] = Field(default_factory=list)
 
 
 # ---- Connections ----

@@ -1,0 +1,41 @@
+{
+  "_comment": "FLOOR experiment corpus (vs the curated Gate-1 CEILING in data/golden/notes.json). Deliberately messy/realistic: same-domain near-duplicates that should NOT surface as non-obvious (topical reject must catch them), low-salience noise notes that should yield no facets, a handful of genuine cross-domain structural pairs (the signal), and forced/garbage pairs (the false-positive trap). Run: KG_PROVIDER=ollama kg-engine eval data/floor/notes.json",
+  "notes": [
+    {"id": "ml_grad", "title": "Gradient descent and local minima", "domain": "machine learning", "text": "Optimizing a model means walking downhill on an error surface. The trouble is that the surface is bumpy: the walk can settle into a shallow valley that is not the deepest one available. Once there, every small step looks like it makes things worse, so the process stops even though a far better solution exists elsewhere. Momentum and random restarts exist precisely because a purely greedy descent commits too early to whatever local dip it first fell into."},
+    {"id": "ml_overfit", "title": "Overfitting", "domain": "machine learning", "text": "A model with enough capacity will start memorizing the noise in its training data instead of the underlying signal. It scores beautifully on what it has seen and fails on anything new, because it mistook accidental coincidences for real structure. Regularization and held-out validation are attempts to punish the model for reading meaning into patterns that were never there."},
+    {"id": "ml_nn", "title": "What is a neural network", "domain": "machine learning", "text": "A neural network is layers of weighted connections. Each layer transforms its input and passes it on; training adjusts the weights so the output matches the target. Deeper networks can represent more complex functions. This is a basic explainer of the architecture, nothing more."},
+    {"id": "fin_cb", "title": "Central bank credibility", "domain": "economics", "text": "A central bank's power rests less on its reserves than on the market's belief that it will follow through. Credibility is the real asset: if people trust the bank will defend its target, it rarely has to spend much doing so. The moment that belief erodes, intervention becomes expensive and often futile. The strength comes from being visibly unable to back down."},
+    {"id": "fin_rates", "title": "How interest rates work", "domain": "economics", "text": "An interest rate is the price of borrowing money over time. When the central rate rises, loans get more expensive and saving becomes more attractive, which tends to cool spending. When it falls, borrowing is cheaper and activity tends to pick up. A straightforward primer on the mechanism."},
+    {"id": "fin_bubble", "title": "Asset bubbles", "domain": "economics", "text": "A bubble feeds on itself: rising prices convince more buyers to enter, whose buying pushes prices higher still, which seems to confirm that entering was wise. The expectation of further gains becomes the only thing holding the price up. When the inflow of new believers slows, the same loop runs in reverse and the collapse is as self-reinforcing as the climb."},
+    {"id": "bio_eco", "title": "Fitness landscapes in evolution", "domain": "biology", "text": "Picture every possible genome as a point on a terrain whose height is reproductive fitness. A population climbs uphill through selection, but it can only take small steps and only ever moves up. So it tends to get marooned on a modest peak with no path to a taller one nearby, because reaching the higher summit would require first walking downhill through less-fit forms."},
+    {"id": "bio_immune", "title": "Immune memory", "domain": "biology", "text": "After fighting off a pathogen, the immune system keeps specialized cells that remember it. A second exposure is met faster and harder than the first. Vaccines exploit this by presenting a harmless preview so the memory forms without the disease."},
+    {"id": "bio_quorum", "title": "Bacterial quorum sensing", "domain": "biology", "text": "Individual bacteria release signaling molecules and constantly sample how much of them is around. Below a concentration threshold each cell behaves alone; once the signal crosses that threshold the whole population switches on a collective behavior at once. It is a way of waiting until enough others are present before committing to a group action."},
+    {"id": "psy_superstition", "title": "Superstition and pattern-finding", "domain": "psychology", "text": "People are tuned to find patterns, and the tuning overshoots: we readily see meaning, causes, and intentions in what is actually random. A gambler reads a streak into coin flips; a fan credits a ritual for a team's win. The cost of occasionally inventing a pattern that is not there was, evolutionarily, lower than the cost of missing a real one."},
+    {"id": "psy_habit", "title": "How habits form", "domain": "psychology", "text": "A habit is a loop: a cue triggers a routine that delivers a reward, and repetition wears the loop into a groove. Over time the cue alone is enough to launch the routine with little conscious thought. Changing a habit is easier when you keep the cue and reward but swap the routine."},
+    {"id": "hist_deterrence", "title": "Cold war deterrence", "domain": "history", "text": "Deterrence worked not by winning a fight but by making one unwinnable for everyone. Each side's security rested on the other's belief that an attack would be answered without fail. The doctrine deliberately removed the option of backing down, because a threat that could be quietly abandoned would not be believed and so would not deter."},
+    {"id": "hist_rome", "title": "Why Rome fell", "domain": "history", "text": "The fall of Rome had many causes that historians still argue about: overextension, fiscal strain, plague, migration pressure, and political instability all played a part. No single factor explains it. This note just gathers the usual suspects without taking a position."},
+    {"id": "sw_techdebt", "title": "Technical debt", "domain": "software", "text": "Shipping a quick shortcut buys speed now at the price of future drag. Each unpaid shortcut makes the next change a little harder, and the interest compounds: eventually the team spends more effort working around past shortcuts than building anything new. Paying it down deliberately is cheaper than letting it accrue until the system calcifies."},
+    {"id": "sw_cache", "title": "Cache invalidation", "domain": "software", "text": "A cache trades freshness for speed by holding a copy of data that might already be stale. The hard part is knowing when the copy is wrong and must be discarded. Invalidate too eagerly and you lose the speed; too lazily and you serve wrong answers. A short practical note on the tradeoff."},
+    {"id": "noise_list", "title": "Stuff to do", "domain": "personal", "text": "milk, eggs, call dentist, return library books, pay electricity bill, buy birthday card, charger for the trip, ask Sam about the weekend."},
+    {"id": "noise_quote", "title": "Saved quote", "domain": "personal", "text": "\"The only way out is through.\" Keep going. Remember to breathe."},
+    {"id": "sw_scaling", "title": "Premature optimization", "domain": "software", "text": "Tuning code before you know where it is slow usually wastes effort on parts that never mattered and adds complexity that makes the real bottleneck harder to find later. Measure first, then optimize the few places that actually dominate."}
+  ],
+  "genuine_pairs": [
+    ["ml_grad", "bio_eco"],
+    ["fin_cb", "hist_deterrence"],
+    ["ml_overfit", "psy_superstition"],
+    ["fin_bubble", "psy_superstition"]
+  ],
+  "garbage_pairs": [
+    ["ml_grad", "ml_nn"],
+    ["ml_overfit", "ml_nn"],
+    ["fin_cb", "fin_rates"],
+    ["fin_bubble", "fin_rates"],
+    ["bio_immune", "hist_rome"],
+    ["psy_habit", "sw_cache"],
+    ["ml_nn", "fin_rates"],
+    ["bio_immune", "noise_list"],
+    ["sw_techdebt", "sw_scaling"],
+    ["hist_rome", "noise_quote"]
+  ]
+}

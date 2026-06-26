@@ -75,7 +75,9 @@ def _split_notes(user: str) -> tuple[str, str]:
 
 
 class Provider(Protocol):
-    def chat_json(self, system: str, user: str, model: str) -> dict: ...
+    def chat_json(
+        self, system: str, user: str, model: str, schema: dict | None = None
+    ) -> dict: ...
     def embed(self, texts: list[str], model: str) -> list[list[float]]: ...
 
 
@@ -100,7 +102,9 @@ class FakeProvider:
             out.append([x / n for x in v])
         return out
 
-    def chat_json(self, system: str, user: str, model: str) -> dict:
+    def chat_json(self, system: str, user: str, model: str, schema: dict | None = None) -> dict:
+        # `schema` accepted for interface parity; the fake provider already emits objects that
+        # validate against the (extra='forbid') Pydantic models, so it is the contract test.
         # Route by recognizable cues in the system prompt.
         if "extract the STRUCTURAL facets" in system:
             toks = sorted(set(t for t in _tokens(user) if len(t) > 3))[:6]
@@ -258,12 +262,14 @@ class OllamaProvider:
             out.append(r.json()["embedding"])
         return out
 
-    def chat_json(self, system: str, user: str, model: str) -> dict:
+    def chat_json(self, system: str, user: str, model: str, schema: dict | None = None) -> dict:
+        # Provider-native structured output (C1): pass the Pydantic JSON Schema as `format` so the
+        # model is CONSTRAINED to it, not just nudged with "return JSON". Falls back to "json".
         r = self._client.post(
             f"{self.host}/api/chat",
             json={
                 "model": model,
-                "format": "json",
+                "format": schema if schema is not None else "json",
                 "stream": False,
                 "options": {"temperature": 0.2},
                 "messages": [
@@ -291,7 +297,9 @@ class AnthropicProvider:
             "Anthropic does not serve embeddings; set KG_EMBED via Voyage/Ollama separately."
         )
 
-    def chat_json(self, system: str, user: str, model: str) -> dict:
+    def chat_json(self, system: str, user: str, model: str, schema: dict | None = None) -> dict:
+        # `schema` is accepted for interface parity; the Anthropic structured-output path
+        # (output_config.format / messages.parse) is wired with the managed-model work.
         msg = self._client.messages.create(
             model=model,
             max_tokens=1024,
