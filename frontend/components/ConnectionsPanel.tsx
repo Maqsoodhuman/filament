@@ -14,7 +14,7 @@ import ConnectionCard from "./ConnectionCard";
 // cards reveal. An empty result is honest — we say so.
 
 export default function ConnectionsPanel({ note }: { note: Note }) {
-  const { connectionsFor, noteById } = useStore();
+  const { connectionsFor, noteById, scan } = useStore();
   const router = useRouter();
   const [scanning, setScanning] = useState(false);
   const [scanned, setScanned] = useState(false);
@@ -27,10 +27,11 @@ export default function ConnectionsPanel({ note }: { note: Note }) {
   async function findConnections() {
     setScanning(true);
     setScanned(false);
-    // On-demand engine trigger. Task #7 swaps this for
-    // POST /api/notes/{id}/find-connections + poll the job. The calm beat is
-    // intentional — surfacing a real thread should feel considered.
-    await new Promise((r) => setTimeout(r, 1100));
+    // Real on-demand engine trigger: push notes → run the async pipeline → poll
+    // the job → overlay the engine's connections/clusters (lib/store.runScan).
+    // If the engine is unreachable the store keeps the local seed, so the panel
+    // stays usable offline.
+    await scan();
     setScanning(false);
     setScanned(true);
   }

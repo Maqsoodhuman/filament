@@ -3,9 +3,33 @@
   "configurations": [
     {
       "name": "kg-frontend",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "frontend", "run", "dev"],
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "KG_API_URL=http://localhost:8010",
+        "npm",
+        "--prefix",
+        "frontend",
+        "run",
+        "dev"
+      ],
       "port": 3000
+    },
+    {
+      "name": "kg-engine-api",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "KG_PROVIDER=fake",
+        "KG_STORE_BACKEND=memory",
+        "KG_QUEUE=memory",
+        "KG_EMBEDDED_WORKER=1",
+        "engine/.venv/bin/python",
+        "-m",
+        "uvicorn",
+        "kg_api.main:app",
+        "--port",
+        "8010"
+      ],
+      "port": 8010
     }
   ]
 }

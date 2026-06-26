@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Maximize2, Minimize2, Link2, PenLine } from "lucide-react";
+import { Maximize2, Minimize2, Link2, PenLine, RefreshCw } from "lucide-react";
 import { useStore, formatDay, formatFull, type Cluster, type Note } from "@/lib/store";
 import { ReadBlock, readNumbers } from "./ReadBlocks";
 import ConnectionCard from "./ConnectionCard";
@@ -15,10 +15,17 @@ import ConnectionCard from "./ConnectionCard";
 
 export default function OrganizeView() {
   const router = useRouter();
-  const { clusters, notes, connectionsFor, noteById } = useStore();
+  const { clusters, notes, connectionsFor, noteById, recluster } = useStore();
   const [clusterId, setClusterId] = useState<string | null>(null);
   const [pageId, setPageId] = useState<string | null>(null);
   const [full, setFull] = useState(false);
+  const [reclustering, setReclustering] = useState(false);
+
+  async function onRecluster() {
+    setReclustering(true);
+    await recluster();
+    setReclustering(false);
+  }
 
   const activeCluster: Cluster | undefined =
     clusters.find((c) => c.id === clusterId) ?? clusters[0];
@@ -76,6 +83,16 @@ export default function OrganizeView() {
             <span className="ct">{c.note_count}</span>
           </button>
         ))}
+        <button
+          className="one-sec"
+          onClick={onRecluster}
+          disabled={reclustering}
+          title="New notes join existing sections automatically; this rebuilds all sections from scratch."
+          style={{ marginTop: 8, opacity: reclustering ? 0.6 : 1, color: "var(--text-soft)" }}
+        >
+          <RefreshCw size={13} className={reclustering ? "spin" : undefined} />
+          <span className="txt">{reclustering ? "Re-clustering…" : "Re-cluster"}</span>
+        </button>
       </div>
 
       {/* pages */}

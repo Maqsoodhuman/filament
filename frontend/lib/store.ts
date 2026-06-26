@@ -11,6 +11,7 @@
 // as an import, so the editor never forks the engine.
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { ParsedNote } from "./import";
 
 export type BlockType =
   | "paragraph"
@@ -111,6 +112,16 @@ export const blk = (type: BlockType, text = "", extra: Partial<Block> = {}): Blo
   text,
   ...extra,
 });
+
+// Turn imported plain text into editor blocks: split on blank lines into
+// paragraphs (the engine only reads the joined text, so block shape is cosmetic).
+function textToBlocks(text: string): Block[] {
+  const paras = text
+    .split(/\n\s*\n/)
+    .map((p) => p.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  return paras.length ? paras.map((p) => blk("paragraph", p)) : [blk("paragraph", text.trim())];
+}
 
 // ---- seed: Filament craft × our engine's signature connections ------------
 // The threshold-commitment cluster (bank runs ↔ quorum sensing ↔ Rawls) is the
@@ -312,6 +323,40 @@ function save(s: Snapshot) {
   }
 }
 
+// Explicit "Re-cluster" (Organize): rebuild sections from scratch on the engine (recluster=true),
+// then overlay. Default scans are incremental (a new note joins its nearest existing section); this
+// is the user-triggered full rebalance.
+async function runRecluster(): Promise<void> {
+  if (typeof window === "undefined") return;
+  const rev: Record<string, string> = {};
+  for (const [fid, eid] of Object.entries(engineMap)) rev[eid] = fid;
+  try {
+    const raw = (await (await fetch("/api/clusters?recluster=true")).json()) as Cluster[];
+    engineClusters = raw
+      .map((c, i) => {
+        const ids = (c.note_ids || []).map((eid) => rev[eid]).filter(Boolean) as string[];
+        return {
+          id: c.id,
+          notebook: c.notebook || "Research library",
+          label: c.label,
+          color: CLUSTER_COLORS[i % CLUSTER_COLORS.length],
+          note_ids: ids,
+          note_count: ids.length,
+          is_manual: c.is_manual ?? false,
+        };
+      })
+      .filter((c) => c.note_count > 0);
+    try {
+      window.localStorage.setItem(CLUSTER_KEY, JSON.stringify(engineClusters));
+    } catch {
+      /* private mode */
+    }
+  } catch {
+    /* engine unreachable — keep current sections */
+  }
+  setSnapshot(ensure()); // notify listeners so Organize re-renders
+}
+
 // ---- the hook --------------------------------------------------------------
 
 let listeners: Array<() => void> = [];
@@ -332,6 +377,180 @@ function setSnapshot(next: Snapshot) {
   listeners.forEach((l) => l());
 }
 
+// ---- engine wiring (the real pipeline behind the explicit trigger) ---------
+// "Find connections" / "Scan" pushes local notes to the engine (same-origin BFF
+// /api/*), runs the async pipeline, polls the job, then overlays the engine's
+// REAL connections + clusters — id-mapped back to local note ids. Until the
+// first scan, the curated seed connections/clusters show; a scan replaces them
+// with engine output (an authored note now participates in graph + Organize).
+
+const MAP_KEY = "filament:enginemap:v1";
+const CLUSTER_KEY = "filament:clusters:v1";
+let engineClusters: Cluster[] = [];
+let engineMap: Record<string, string> = {}; // local note id -> engine note id
+
+function loadEngineClusters(): Cluster[] {
+  if (typeof window === "undefined") return [];
+  try {
+    return JSON.parse(window.localStorage.getItem(CLUSTER_KEY) || "[]");
+  } catch {
+    return [];
+  }
+}
+
+function loadMap(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  try {
+    return JSON.parse(window.localStorage.getItem(MAP_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function saveMap() {
+  try {
+    window.localStorage.setItem(MAP_KEY, JSON.stringify(engineMap));
+  } catch {
+    /* private mode */
+  }
+}
+
+function noteText(n: Note): string {
+  const t = n.blocks
+    .map((b) => b.text)
+    .filter(Boolean)
+    .join(" ")
+    .replace(/<[^>]+>/g, " ")
+    .trim();
+  return t || n.title.trim();
+}
+
+export type ScanResult = { ok: boolean; surfaced: number; reason?: string };
+
+async function runScan(): Promise<ScanResult> {
+  if (typeof window === "undefined") return { ok: false, surfaced: 0 };
+  const cur = ensure();
+
+  // 1. push any notes the engine hasn't seen yet (POST /api/notes → engine id)
+  for (const n of cur.notes) {
+    if (engineMap[n.id]) continue;
+    const body = noteText(n);
+    if (!body) continue; // the engine rejects an empty body (min_length=1)
+    try {
+      const res = await fetch("/api/notes", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          title: n.title || "Untitled",
+          body,
+          source: n.source || "authored",
+          tags: n.tags,
+        }),
+      });
+      if (!res.ok) return { ok: false, surfaced: 0, reason: "create failed" };
+      engineMap[n.id] = (await res.json()).id;
+    } catch {
+      return { ok: false, surfaced: 0, reason: "engine unreachable" };
+    }
+  }
+  saveMap();
+
+  // 2. trigger the library scan, 3. poll the job to completion
+  let jobId = "";
+  try {
+    const r = await fetch("/api/scan", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ full: true }),
+    });
+    if (!r.ok) return { ok: false, surfaced: 0, reason: "scan failed" };
+    jobId = (await r.json()).job_id;
+  } catch {
+    return { ok: false, surfaced: 0, reason: "engine unreachable" };
+  }
+  // Live progress via SSE (A3): stream the job's status until done/error (fall back gracefully
+  // if the stream drops). Replaces the old fixed-interval poll.
+  await new Promise<void>((resolve) => {
+    let settled = false;
+    const done = () => {
+      if (!settled) {
+        settled = true;
+        resolve();
+      }
+    };
+    try {
+      const es = new EventSource(`/api/jobs/${jobId}/stream`);
+      es.onmessage = (e) => {
+        try {
+          const d = JSON.parse(e.data);
+          if (d.status === "done" || d.status === "error") {
+            es.close();
+            done();
+          }
+        } catch {
+          /* ignore malformed event */
+        }
+      };
+      es.onerror = () => {
+        es.close();
+        done();
+      };
+      setTimeout(() => {
+        es.close();
+        done();
+      }, 60000);
+    } catch {
+      done();
+    }
+  });
+
+  // 4. fetch connections + clusters, remap engine ids → local ids
+  const rev: Record<string, string> = {};
+  for (const [fid, eid] of Object.entries(engineMap)) rev[eid] = fid;
+
+  let connections: Connection[] = cur.connections;
+  try {
+    const raw = (await (await fetch("/api/connections")).json()) as Connection[];
+    connections = raw
+      .map((c) => {
+        const a = rev[c.a_id];
+        const b = rev[c.b_id];
+        return a && b ? { ...c, a_id: a, b_id: b } : null;
+      })
+      .filter((c): c is Connection => c !== null);
+  } catch {
+    /* keep prior connections */
+  }
+
+  try {
+    const raw = (await (await fetch("/api/clusters")).json()) as Cluster[];
+    engineClusters = raw
+      .map((c, i) => {
+        const ids = (c.note_ids || []).map((eid) => rev[eid]).filter(Boolean) as string[];
+        return {
+          id: c.id,
+          notebook: c.notebook || "Research library",
+          label: c.label,
+          color: CLUSTER_COLORS[i % CLUSTER_COLORS.length],
+          note_ids: ids,
+          note_count: ids.length,
+          is_manual: c.is_manual ?? false,
+        };
+      })
+      .filter((c) => c.note_count > 0);
+    try {
+      window.localStorage.setItem(CLUSTER_KEY, JSON.stringify(engineClusters));
+    } catch {
+      /* private mode */
+    }
+  } catch {
+    /* keep prior clusters */
+  }
+
+  setSnapshot({ notes: cur.notes, connections });
+  return { ok: true, surfaced: connections.length };
+}
+
 export function useStore() {
   const [, force] = useState(0);
   const mounted = useRef(false);
@@ -342,6 +561,8 @@ export function useStore() {
     listeners.push(l);
     // hydrate from localStorage after mount (SSR rendered the seed)
     snapshot = load();
+    engineMap = loadMap();
+    engineClusters = loadEngineClusters();
     force((x) => x + 1);
     return () => {
       listeners = listeners.filter((x) => x !== l);
@@ -352,6 +573,13 @@ export function useStore() {
 
   const updateNote = useCallback((updated: Note) => {
     const cur = ensure();
+    // Edit re-sync (A2): an edit changes the note's content, so drop its engine mapping — the next
+    // scan re-pushes it as fresh content (new content_hash → cache miss → re-extract → re-match),
+    // and its stale connections fall away because the old engine id no longer maps back.
+    if (engineMap[updated.id]) {
+      delete engineMap[updated.id];
+      saveMap();
+    }
     setSnapshot({
       ...cur,
       notes: cur.notes.map((n) => (n.id === updated.id ? { ...updated, updated: Date.now() } : n)),
@@ -375,6 +603,28 @@ export function useStore() {
     return n;
   }, []);
 
+  const importNotes = useCallback(async (parsed: ParsedNote[]): Promise<ScanResult & { added: number }> => {
+    const cur = ensure();
+    const now = Date.now();
+    const added: Note[] = parsed
+      .filter((p) => p.text.trim())
+      .map((p, i) => ({
+        id: uid(),
+        emoji: EMOJIS[i % EMOJIS.length],
+        cover: COVERS[i % COVERS.length],
+        title: p.title || "Untitled",
+        tags: p.tags,
+        source: p.source || "upload",
+        created: now - i,
+        updated: now - i,
+        blocks: textToBlocks(p.text),
+      }));
+    if (added.length) setSnapshot({ ...cur, notes: [...added, ...cur.notes] });
+    // Push the whole library through the engine and surface threads (the import → scan path).
+    const res = await runScan();
+    return { ...res, added: added.length };
+  }, []);
+
   const deleteNote = useCallback((id: string) => {
     const cur = ensure();
     setSnapshot({
@@ -392,15 +642,21 @@ export function useStore() {
     [],
   );
 
+  // Engine clusters once a scan has run; the curated stub until then.
+  const clusters = engineClusters.length ? engineClusters : computeClusters(s.notes);
+
   return {
     hydrated: mounted.current,
     notes: s.notes,
     connections: s.connections,
-    clusters: computeClusters(s.notes),
+    clusters,
     updateNote,
     createNote,
+    importNotes,
     deleteNote,
     connectionsFor,
+    scan: runScan,
+    recluster: runRecluster,
     noteById: (id: string) => s.notes.find((n) => n.id === id),
   };
 }

@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { BookOpen, BookMarked, FileText, Upload, ArrowRight } from "lucide-react";
 import BrandMark from "@/components/BrandMark";
 import ThreadCard from "@/components/ThreadCard";
 import { useStore, topThreads } from "@/lib/store";
+import { parseFiles } from "@/lib/import";
 
 // Onboarding / import → first-insight (docs/COHESIVE_DESIGN.md §3 Onboarding) —
 // in Filament's aesthetic: a warm centred card, import sources, a calm progress
@@ -30,21 +31,44 @@ const SOURCES = [
 
 export default function OnboardingPage() {
   const router = useRouter();
-  const { connections, noteById } = useStore();
+  const { connections, noteById, importNotes } = useStore();
   const [phase, setPhase] = useState<Phase>("idle");
   const [stage, setStage] = useState(0);
+  const [imported, setImported] = useState(0);
+  const fileRef = useRef<HTMLInputElement>(null);
 
+  function openPicker() {
+    fileRef.current?.click();
+  }
+
+  // Real file-drop import (goal A1): parse → importNotes (push library to the
+  // engine + scan) → first insight. The staged prose animates over the real work.
+  async function onFilesPicked(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = ""; // allow re-picking the same file
+    if (!files.length) return;
+    setPhase("scanning");
+    setStage(0);
+    const t1 = setTimeout(() => setStage(1), 700);
+    const t2 = setTimeout(() => setStage(2), 1500);
+    const parsed = await parseFiles(files);
+    const res = await importNotes(parsed);
+    clearTimeout(t1);
+    clearTimeout(t2);
+    setImported(res.added);
+    // We NEVER fabricate a thread: the engine's surfaced count decides done vs empty.
+    setPhase(res.surfaced > 0 ? "done" : "empty");
+  }
+
+  // Sources without a real connector (Readwise/Notion OAuth) keep the demo beat.
   async function runImport() {
     setPhase("scanning");
     setStage(0);
-    // The calm progress beat. Task #7's API wiring fires POST /scan here and
-    // polls the job; the staged prose mirrors the real pipeline order.
     for (let i = 1; i < STAGES.length; i++) {
       await new Promise((r) => setTimeout(r, 850));
       setStage(i);
     }
     await new Promise((r) => setTimeout(r, 850));
-    // We NEVER fabricate a thread: an empty top-list becomes an honest empty.
     setPhase(topThreads(connections, 1).length > 0 ? "done" : "empty");
   }
 
@@ -66,6 +90,15 @@ export default function OnboardingPage() {
               non-obvious threads across it — the kind topic search can&apos;t find.
             </p>
 
+            <input
+              ref={fileRef}
+              type="file"
+              multiple
+              accept=".md,.markdown,.txt,text/markdown,text/plain"
+              onChange={onFilesPicked}
+              style={{ display: "none" }}
+            />
+
             <div className="source-grid">
               {SOURCES.map((s) => {
                 const Ic = s.icon;
@@ -73,7 +106,7 @@ export default function OnboardingPage() {
                   <button
                     key={s.key}
                     className="source-btn"
-                    onClick={runImport}
+                    onClick={() => (s.key === "upload" || s.key === "kindle" ? openPicker() : runImport())}
                     disabled={phase === "scanning"}
                   >
                     <span className="si" style={{ background: s.color }}>
@@ -106,7 +139,10 @@ export default function OnboardingPage() {
         ) : phase === "done" && first ? (
           <>
             <h1>We found a thread you didn&apos;t ask for</h1>
-            <p className="lede">Before your import even finished, the engine lit one up.</p>
+            <p className="lede">
+              {imported > 0 ? `Imported ${imported} note${imported === 1 ? "" : "s"}. ` : ""}
+              Before your import even finished, the engine lit one up.
+            </p>
             <ThreadCard
               c={first}
               aEmoji={noteById(first.a_id)?.emoji}
